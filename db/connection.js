@@ -1,16 +1,14 @@
 
-const mysql = require('mysql2');
-const connection = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '', // update your password
-    database: 'ecommerce_db'
-});
 
-connection.connect((err) => {
-    if (err) throw err;
-    console.log('Connected to MySQL');
-});
+const mysql = require('mysql2');
+
+const connection = mysql.createPool({
+    host: 'localhost',
+    user: 'ecom_user',
+    password: 'StrongPassword@123',
+    database: 'ecommerce_db',
+    connectionLimit: 10
+  });
 
 module.exports = connection;
 
