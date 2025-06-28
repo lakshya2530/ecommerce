@@ -1,7 +1,6 @@
 
 
 const mysql = require('mysql2');
-
 const connection = mysql.createPool({
     host: 'localhost',
     user: 'ecom_user',
@@ -10,6 +9,10 @@ const connection = mysql.createPool({
     connectionLimit: 10
   });
 
+// connection.connect((err) => {
+//     if (err) throw err;
+//     console.log('Connected to MySQL');
+// });
 module.exports = connection;
 
 
