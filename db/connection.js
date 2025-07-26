@@ -1,6 +1,13 @@
 
+//const mysql = require('mysql2');
+const mysql = require('mysql2/promise');
 
-const mysql = require('mysql2');
+// const connection = mysql.createConnection({
+//     host: 'localhost',
+//     user: 'root',
+//     password: '', // update your password
+//     database: 'ecommerce_db'
+// });
 const connection = mysql.createPool({
     host: 'localhost',
     user: 'ecom_user',
