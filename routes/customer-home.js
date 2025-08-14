@@ -424,11 +424,14 @@ router.get('/customer/shops', (req, res) => {
         if (cartItems.length === 0) return res.status(400).json({ error: 'Cart is empty' });
   
         const order_number = 'ORD' + Date.now();
+        const firstItem = cartItems[0];
         const orderData = {
           order_number,
           customer_id,
           status: 'placed',
-          order_date: new Date()
+          order_date: new Date(),
+          product_id: firstItem.product_id,  // new field
+          vendor_id: firstItem.vendor_id 
         };
   
         db.query('INSERT INTO orders SET ?', orderData, (err, result) => {
@@ -486,7 +489,7 @@ router.get('/customer/shops', (req, res) => {
   
       results.forEach(order => {
        // order.delivery_date
-        const deliveryDate = new Date(order.order_date || order.order_date);
+        const deliveryDate = new Date(order.delivery_date || order.order_date);
         const images = (() => {
           try {
             return JSON.parse(order.images || '[]').map(
