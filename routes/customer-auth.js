@@ -141,6 +141,70 @@ router.post("/customer-login", (req, res) => {
   });
 });
 
+router.post('/forgot-password', (req, res) => {
+  const { identifier } = req.body; // email or phone
+
+  const sql = "SELECT * FROM users WHERE email = ? OR phone = ?";
+  db.query(sql, [identifier, identifier], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (!results.length) return res.status(404).json({ error: "User not found" });
+
+    const user = results[0];
+    const otp = 123456;//Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    const sqlOtp = `UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?`;
+    db.query(sqlOtp, [otp, expiry, user.id], (err2) => {
+      if (err2) return res.status(500).json({ error: "Failed to save OTP" });
+
+      // TODO: send via email or SMS (use nodemailer / Twilio / any SMS API)
+      console.log(`OTP for ${identifier}: ${otp}`);
+
+      res.json({ message: "OTP sent successfully" });
+    });
+  });
+});
+
+router.post('/reset-password', (req, res) => {
+  const { identifier, otp, newPassword } = req.body;
+
+  if (!isStrongPassword(newPassword)) {
+    return res.status(400).json({ 
+      error: "Password must be at least 6 chars, include upper, lower, digit, and special char." 
+    });
+  }
+//AND reset_otp_expiry > NOW()
+  const sql = "SELECT * FROM users WHERE (email = ? OR phone = ?) AND reset_otp = ?";
+  db.query(sql, [identifier, identifier, otp], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (!results.length) return res.status(400).json({ error: "Invalid OTP or expired" });
+
+    const user = results[0];
+
+    bcrypt.hash(newPassword, 10, (hashErr, hash) => {
+      if (hashErr) return res.status(500).json({ error: "Password hashing failed" });
+
+      const sqlUpdate = `
+        UPDATE users 
+        SET password = ?, reset_otp = NULL, reset_otp_expiry = NULL 
+        WHERE id = ?
+      `;
+      db.query(sqlUpdate, [hash, user.id], (err2) => {
+        if (err2) return res.status(500).json({ error: "Failed to update password" });
+
+        res.json({ message: "Password reset successful" });
+      });
+    });
+  });
+});
+
+function isStrongPassword(password) {
+  const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$/;
+  return regex.test(password);
+}
+
+
+
 // router.post('/customer-login', (req, res) => {
 //     const { email, password } = req.body;
   
