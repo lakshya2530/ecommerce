@@ -1309,8 +1309,10 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     ];
 
     db.query(insertQuery, values, (err2, result) => {
-      if (err2) return res.status(500).json({ error: 'Failed to create service' });
-
+      if (err2) {
+        console.error("MySQL error:", err2);
+        return res.status(500).json({ error: 'Failed to create service', details: err2 });
+      }
       const service_id = result.insertId;
 
       // 3. Insert slots if scheduled
