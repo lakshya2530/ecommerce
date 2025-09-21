@@ -1391,11 +1391,11 @@ router.get('/services-list', (req, res) => {
       const finalResults = results.map(service => ({
         ...service,
         slots: service.service_type === "scheduled" ? (slotsMap[service.service_id] || []) : [],
-        gallery: service.gallery ? JSON.parse(service.gallery) : [],
-        brands: service.brands ? JSON.parse(service.brands) : [],
-        features: service.features ? JSON.parse(service.features) : [],
-        exclusions: service.exclusions ? JSON.parse(service.exclusions) : [],
-        previous_work: service.previous_work ? JSON.parse(service.previous_work) : []
+        gallery: service.gallery ? safeJsonParse(service.gallery) : [],
+        brands: service.brands ? safeJsonParse(service.brands) : [],
+        features: service.features ? safeJsonParse(service.features) : [],
+        exclusions: service.exclusions ? safeJsonParse(service.exclusions) : [],
+        previous_work: service.previous_work ? safeJsonParse(service.previous_work) : []
       }));
 
       res.json({
