@@ -1246,10 +1246,18 @@ router.get('/vendor/my-bids', authenticate, (req, res) => {
 
 router.post('/create-service', uploadService.array('gallery', 5), (req, res) => {
   const { 
-    sub_category_id, service_description, price, approx_time, vendor_id,
-    service_type, location, meet_link, slots
+    sub_category_id,
+    service_description,
+    price,
+    approx_time,
+    vendor_id,
+    service_type,   // "one_time" or "scheduled"
+    location,       // "onsite", "customer_site", "google_meet"
+    meet_link,      // required if google_meet
+    slots           // array or stringified JSON
   } = req.body;
 
+  // Validate required fields
   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
     return res.status(400).json({ error: 'All fields are required' });
   }
@@ -1260,7 +1268,7 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
   // Gallery images
   const gallery = req.files?.map(file => file.filename) || [];
 
-  // 1. Get service name
+  // 1. Get service name from subcategory
   const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
   db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
     if (err) return res.status(500).json({ error: 'Database error' });
@@ -1281,11 +1289,22 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
 
     db.query(insertQuery, values, (err2, result) => {
       if (err2) return res.status(500).json({ error: 'Failed to create service' });
+
       const service_id = result.insertId;
 
-      // 3. If scheduled → insert slots
-      if (service_type === "scheduled" && slots && Array.isArray(JSON.parse(slots))) {
-        const slotValues = JSON.parse(slots).map(s => [service_id, s.date, s.time]);
+      // 3. Parse slots safely
+      let parsedSlots = [];
+      if (slots) {
+        try {
+          parsedSlots = typeof slots === "string" ? JSON.parse(slots) : slots;
+        } catch (e) {
+          return res.status(400).json({ error: 'Invalid slots format' });
+        }
+      }
+
+      // 4. Insert slots if scheduled
+      if (service_type === "scheduled" && Array.isArray(parsedSlots) && parsedSlots.length) {
+        const slotValues = parsedSlots.map(s => [service_id, s.date, s.time]);
         const slotQuery = `INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?`;
         db.query(slotQuery, [slotValues], (err3) => {
           if (err3) return res.status(500).json({ error: 'Failed to save slots' });
@@ -1297,6 +1316,7 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     });
   });
 });
+
 
 router.get('/services-list', (req, res) => {
   const { vendor_id } = req.query;
