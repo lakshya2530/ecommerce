@@ -1317,7 +1317,6 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
   });
 });
 
-
 router.get('/services-list', (req, res) => {
   const { vendor_id } = req.query;
 
@@ -1332,11 +1331,23 @@ router.get('/services-list', (req, res) => {
       s.service_type,
       s.location,
       s.meet_link,
-      s.gallery,  -- ✅ include gallery
+      s.gallery,
+      s.brands,
+      s.features,
+      s.exclusions,
+      s.previous_work,
+      s.gst_applicable,
+      s.gst_code,
       sc.name AS subcategory_name,
-      sc.image AS subcategory_image
+      sc.image AS subcategory_image,
+      u.full_name AS vendor_name,
+      u.shop_name,
+      u.phone AS vendor_phone,
+      u.email AS vendor_email,
+      u.address AS vendor_address
     FROM services s
     LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+    LEFT JOIN users u ON s.vendor_id = u.id
     WHERE 1=1
   `;
 
@@ -1356,11 +1367,8 @@ router.get('/services-list', (req, res) => {
     }
 
     const serviceIds = results.map(r => r.service_id);
-    if (serviceIds.length === 0) {
-      return res.json({ status: true, message: 'Services fetched successfully', data: results });
-    }
-
     const slotQuery = `SELECT * FROM service_slots WHERE service_id IN (?)`;
+
     db.query(slotQuery, [serviceIds], (err2, slotResults) => {
       if (err2) return res.status(500).json({ error: 'Failed to fetch slots' });
 
@@ -1377,7 +1385,11 @@ router.get('/services-list', (req, res) => {
       const finalResults = results.map(service => ({
         ...service,
         slots: service.service_type === "scheduled" ? (slotsMap[service.service_id] || []) : [],
-        gallery: service.gallery ? JSON.parse(service.gallery) : [] // ✅ parse JSON to array
+        gallery: service.gallery ? JSON.parse(service.gallery) : [],
+        brands: service.brands ? JSON.parse(service.brands) : [],
+        features: service.features ? JSON.parse(service.features) : [],
+        exclusions: service.exclusions ? JSON.parse(service.exclusions) : [],
+        previous_work: service.previous_work ? JSON.parse(service.previous_work) : []
       }));
 
       res.json({
@@ -1388,7 +1400,6 @@ router.get('/services-list', (req, res) => {
     });
   });
 });
-
 
 // router.get('/services-list', (req, res) => {
 //   const { vendor_id } = req.query;
@@ -1459,13 +1470,21 @@ router.get('/services-list', (req, res) => {
 //   });
 // });
 
-router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) => {
+router.put('/update-service/:id', authenticate, uploadService.array('gallery', 5), (req, res) => {
   const service_id = req.params.id;
   const {
-    sub_category_id, service_description, price, approx_time,
-    vendor_id, service_type, location, meet_link, slots
+    sub_category_id,
+    service_description,
+    price,
+    approx_time,
+    vendor_id,
+    service_type,   // "one_time" or "scheduled"
+    location,       // "onsite", "customer_site", "google_meet"
+    meet_link,      // required if google_meet
+    slots           // array or stringified JSON
   } = req.body;
 
+  // Validate required fields
   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
     return res.status(400).json({ error: 'All fields are required' });
   }
@@ -1473,53 +1492,76 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
     return res.status(400).json({ error: 'Meet link required for Google Meet location' });
   }
 
-  // New gallery images
-  const gallery = req.files?.map(file => file.filename) || [];
+  // Gallery images
+  const gallery = req.files?.map(file => file.filename);
 
-  // 1. Get service name
-  db.query('SELECT name FROM service_subcategories WHERE id = ?', [sub_category_id], (err, subResults) => {
+  // 1. Get service name from subcategory
+  const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
+  db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (subResults.length === 0) return res.status(404).json({ error: 'Subcategory not found' });
 
     const service_name = subResults[0].name;
 
-    // 2. Update service
-    const updateQuery = `
-      UPDATE services SET 
-        sub_category_id=?, service_name=?, service_description=?, price=?, approx_time=?, 
-        vendor_id=?, service_type=?, location=?, meet_link=?, gallery=?
-      WHERE id=?
-    `;
-    const values = [
-      sub_category_id, service_name, service_description, price, approx_time,
-      vendor_id, service_type, location, meet_link || null, JSON.stringify(gallery), service_id
-    ];
+    // 2. Build updated service data
+    const updatedData = {
+      sub_category_id,
+      service_name,
+      service_description,
+      price,
+      approx_time,
+      vendor_id,
+      service_type,
+      location,
+      meet_link: meet_link || null
+    };
 
-    db.query(updateQuery, values, (err2) => {
+    if (gallery && gallery.length) {
+      updatedData.gallery = JSON.stringify(gallery);
+    }
+
+    // 3. Update service
+    const updateQuery = 'UPDATE services SET ? WHERE id = ?';
+    db.query(updateQuery, [updatedData, service_id], (err2) => {
       if (err2) return res.status(500).json({ error: 'Failed to update service' });
 
-      // 3. Slots update
-      if (service_type === "scheduled" && slots && Array.isArray(JSON.parse(slots))) {
-        db.query('DELETE FROM service_slots WHERE service_id=?', [service_id], (err3) => {
-          if (err3) return res.status(500).json({ error: 'Failed to clear old slots' });
-          const slotValues = JSON.parse(slots).map(s => [service_id, s.date, s.time]);
-          if (slotValues.length > 0) {
-            db.query('INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?', [slotValues], (err4) => {
-              if (err4) return res.status(500).json({ error: 'Failed to insert slots' });
-              return res.json({ message: 'Service updated with slots & images', service_id, gallery });
+      // 4. Parse slots safely
+      let parsedSlots = [];
+      if (slots) {
+        try {
+          parsedSlots = typeof slots === "string" ? JSON.parse(slots) : slots;
+        } catch (e) {
+          return res.status(400).json({ error: 'Invalid slots format' });
+        }
+      }
+
+      // 5. Update slots if scheduled
+      if (service_type === "scheduled") {
+        // Delete old slots
+        db.query('DELETE FROM service_slots WHERE service_id = ?', [service_id], (err3) => {
+          if (err3) return res.status(500).json({ error: 'Failed to delete old slots' });
+
+          if (parsedSlots.length > 0) {
+            const slotValues = parsedSlots.map(s => [service_id, s.date, s.time]);
+            const slotQuery = 'INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?';
+            db.query(slotQuery, [slotValues], (err4) => {
+              if (err4) return res.status(500).json({ error: 'Failed to insert new slots' });
+              return res.json({ message: 'Service updated successfully with slots', service_id, gallery });
             });
           } else {
-            return res.json({ message: 'Service updated (slots cleared)', service_id, gallery });
+            return res.json({ message: 'Service updated successfully (slots cleared)', service_id, gallery });
           }
         });
       } else {
-        db.query('DELETE FROM service_slots WHERE service_id=?', [service_id], () => {
+        // If not scheduled, remove any old slots
+        db.query('DELETE FROM service_slots WHERE service_id = ?', [service_id], () => {
           return res.json({ message: 'Service updated successfully', service_id, gallery });
         });
       }
     });
   });
 });
+
 
 // router.put('/update-service/:id', (req, res) => {
 //   const service_id = req.params.id;
