@@ -1387,6 +1387,16 @@ router.get('/services-list', (req, res) => {
           time: slot.slot_time
         });
       });
+      const safeJsonParse = (input) => {
+        if (!input) return [];
+        try {
+          return typeof input === 'string' ? JSON.parse(input) : input;
+        } catch {
+          // fallback for comma-separated string
+          return input.split(',').map(s => s.trim());
+        }
+      };
+      
 
       const finalResults = results.map(service => ({
         ...service,
