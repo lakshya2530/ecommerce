@@ -6,6 +6,7 @@ const db = require('../db/connection');
 const authenticate = require('../middleware/auth');
 const razorpay = require("../config/razorpay"); // import config
 const crypto = require("crypto");
+const uploadService = require('../middleware/upload-service');
 
 // 🔧 Multer setup
 const storage = multer.diskStorage({
@@ -78,6 +79,43 @@ router.post(
     });
   }
 );
+router.post('/vendor-settings', authenticate, (req, res) => {
+  const vendor_id = req.user.id; // vendor from token
+  const { min_cart_amount = 0, courier_charge = 0 } = req.body;
+
+  const data = {
+    min_cart_amount,
+    courier_charge
+  };
+
+  const query = 'UPDATE vendor_shops SET ? WHERE vendor_id = ?';
+
+  db.query(query, [data, vendor_id], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Shop not found' });
+    }
+
+    res.json({ message: 'Vendor settings updated successfully', data });
+  });
+});
+
+router.get('/vendor-settings/:vendor_id', (req, res) => {
+  const { vendor_id } = req.params;
+
+  const query = `
+    SELECT vendor_id, min_cart_amount, courier_charge 
+    FROM vendor_shops WHERE vendor_id = ?
+  `;
+
+  db.query(query, [vendor_id], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!rows.length) return res.status(404).json({ message: 'Vendor not found' });
+
+    res.json({ message: 'Vendor settings fetched', data: rows[0] });
+  });
+});
 
 
 router.post(
@@ -1135,101 +1173,94 @@ router.get('/vendor/my-bids', authenticate, (req, res) => {
     });
   });
   
-//   router.post('/create-service', (req, res) => {
-//     const { sub_category_id, service_description, price, approx_time, vendor_id } = req.body;
 
-//     if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id) {
-//         return res.status(400).json({ error: 'All fields are required' });
-//     }
+// router.post('/create-service', (req, res) => {
+//   const { 
+//     sub_category_id, 
+//     service_description, 
+//     price, 
+//     approx_time, 
+//     vendor_id,
+//     service_type,   // "one_time" or "scheduled"
+//     location,       // "onsite", "customer_site", "google_meet"
+//     meet_link,      // required if google_meet
+//     slots           // array of { date: "YYYY-MM-DD", time: "HH:MM:SS" }
+//   } = req.body;
 
-    
-//     // 1. Get the service name from subcategory
-//     const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
-//     db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
-//         if (err) return res.status(500).json({ error: 'Database error' });
-//         if (subResults.length === 0) return res.status(404).json({ error: 'Subcategory not found' });
-
-//         const service_name = subResults[0].name;
-
-//         // 2. Insert into services table
-//         const insertQuery = `INSERT INTO services 
-//             (sub_category_id, service_name, service_description, price, approx_time, vendor_id)
-//             VALUES (?, ?, ?, ?, ?, ?)`;
-
-//         const values = [sub_category_id, service_name, service_description, price, approx_time, vendor_id];
-
-//         db.query(insertQuery, values, (err2, result) => {
-//             if (err2) return res.status(500).json({ error: 'Failed to create service' });
-
-//             res.json({
-//                 message: 'Service created successfully',
-//                 service_id: result.insertId,
-//                 service_name,
-//             });
-//         });
-//     });
-// });
-
-// router.get('/services-list', (req, res) => {
-//   const { vendor_id } = req.query;
-
-//   let sql = `
-//     SELECT 
-//       s.id AS service_id,
-//       s.service_name,
-//       s.service_description,
-//       s.price,
-//       s.approx_time,
-//       s.vendor_id,
-//       sc.name AS subcategory_name,
-//       sc.image AS subcategory_image
-//     FROM services s
-//     LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
-//     WHERE 1=1
-//   `;
-
-//   const params = [];
-
-//   if (vendor_id) {
-//     sql += ' AND s.vendor_id = ?';
-//     params.push(vendor_id);
+//   // Validate
+//   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
+//     return res.status(400).json({ error: 'All fields are required' });
 //   }
 
-//   sql += ' ORDER BY s.id DESC';
+//   if (location === "google_meet" && !meet_link) {
+//     return res.status(400).json({ error: 'Meet link required for Google Meet location' });
+//   }
 
-//   db.query(sql, params, (err, results) => {
-//     if (err) return res.status(500).json({ error: 'Database error', details: err });
-//     res.json({
-//       status: true,
-//       message: 'Services fetched successfully',
-//       data: results,
+//   // 1. Get service name from subcategory
+//   const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
+//   db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
+//     if (err) return res.status(500).json({ error: 'Database error' });
+//     if (subResults.length === 0) return res.status(404).json({ error: 'Subcategory not found' });
+
+//     const service_name = subResults[0].name;
+
+//     // 2. Insert into services
+//     const insertQuery = `
+//       INSERT INTO services 
+//         (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link)
+//       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+//     `;
+
+//     const values = [sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link || null];
+
+//     db.query(insertQuery, values, (err2, result) => {
+//       if (err2) return res.status(500).json({ error: 'Failed to create service' });
+
+//       const service_id = result.insertId;
+
+//       // 3. If scheduled → insert slots
+//       if (service_type === "scheduled" && Array.isArray(slots) && slots.length > 0) {
+//         const slotValues = slots.map(s => [service_id, s.date, s.time]);
+//         const slotQuery = `INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?`;
+
+//         db.query(slotQuery, [slotValues], (err3) => {
+//           if (err3) return res.status(500).json({ error: 'Failed to save slots' });
+
+//           return res.json({
+//             message: 'Service created successfully with slots',
+//             service_id,
+//             service_name,
+//           });
+//         });
+//       } else {
+//         return res.json({
+//           message: 'Service created successfully',
+//           service_id,
+//           service_name,
+//         });
+//       }
 //     });
 //   });
 // });
 
-router.post('/create-service', (req, res) => {
+
+router.post('/create-service', uploadService.array('gallery', 5), (req, res) => {
   const { 
-    sub_category_id, 
-    service_description, 
-    price, 
-    approx_time, 
-    vendor_id,
-    service_type,   // "one_time" or "scheduled"
-    location,       // "onsite", "customer_site", "google_meet"
-    meet_link,      // required if google_meet
-    slots           // array of { date: "YYYY-MM-DD", time: "HH:MM:SS" }
+    sub_category_id, service_description, price, approx_time, vendor_id,
+    service_type, location, meet_link, slots
   } = req.body;
 
-  // Validate
   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
     return res.status(400).json({ error: 'All fields are required' });
   }
-
   if (location === "google_meet" && !meet_link) {
     return res.status(400).json({ error: 'Meet link required for Google Meet location' });
   }
 
-  // 1. Get service name from subcategory
+  // Gallery images
+  const gallery = req.files?.map(file => file.filename) || [];
+
+  // 1. Get service name
   const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
   db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
     if (err) return res.status(500).json({ error: 'Database error' });
@@ -1237,45 +1268,35 @@ router.post('/create-service', (req, res) => {
 
     const service_name = subResults[0].name;
 
-    // 2. Insert into services
+    // 2. Insert service
     const insertQuery = `
       INSERT INTO services 
-        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-
-    const values = [sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link || null];
+    const values = [
+      sub_category_id, service_name, service_description, price, approx_time,
+      vendor_id, service_type, location, meet_link || null, JSON.stringify(gallery)
+    ];
 
     db.query(insertQuery, values, (err2, result) => {
       if (err2) return res.status(500).json({ error: 'Failed to create service' });
-
       const service_id = result.insertId;
 
       // 3. If scheduled → insert slots
-      if (service_type === "scheduled" && Array.isArray(slots) && slots.length > 0) {
-        const slotValues = slots.map(s => [service_id, s.date, s.time]);
+      if (service_type === "scheduled" && slots && Array.isArray(JSON.parse(slots))) {
+        const slotValues = JSON.parse(slots).map(s => [service_id, s.date, s.time]);
         const slotQuery = `INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?`;
-
         db.query(slotQuery, [slotValues], (err3) => {
           if (err3) return res.status(500).json({ error: 'Failed to save slots' });
-
-          return res.json({
-            message: 'Service created successfully with slots',
-            service_id,
-            service_name,
-          });
+          return res.json({ message: 'Service created with slots', service_id, gallery });
         });
       } else {
-        return res.json({
-          message: 'Service created successfully',
-          service_id,
-          service_name,
-        });
+        return res.json({ message: 'Service created successfully', service_id, gallery });
       }
     });
   });
 });
-
 
 router.get('/services-list', (req, res) => {
   const { vendor_id } = req.query;
@@ -1291,6 +1312,7 @@ router.get('/services-list', (req, res) => {
       s.service_type,
       s.location,
       s.meet_link,
+      s.gallery,  -- ✅ include gallery
       sc.name AS subcategory_name,
       sc.image AS subcategory_image
     FROM services s
@@ -1334,7 +1356,8 @@ router.get('/services-list', (req, res) => {
 
       const finalResults = results.map(service => ({
         ...service,
-        slots: service.service_type === "scheduled" ? (slotsMap[service.service_id] || []) : []
+        slots: service.service_type === "scheduled" ? (slotsMap[service.service_id] || []) : [],
+        gallery: service.gallery ? JSON.parse(service.gallery) : [] // ✅ parse JSON to array
       }));
 
       res.json({
@@ -1346,83 +1369,215 @@ router.get('/services-list', (req, res) => {
   });
 });
 
-router.put('/update-service/:id', (req, res) => {
+
+// router.get('/services-list', (req, res) => {
+//   const { vendor_id } = req.query;
+
+//   let sql = `
+//     SELECT 
+//       s.id AS service_id,
+//       s.service_name,
+//       s.service_description,
+//       s.price,
+//       s.approx_time,
+//       s.vendor_id,
+//       s.service_type,
+//       s.location,
+//       s.meet_link,
+//       sc.name AS subcategory_name,
+//       sc.image AS subcategory_image
+//     FROM services s
+//     LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+//     WHERE 1=1
+//   `;
+
+//   const params = [];
+//   if (vendor_id) {
+//     sql += ' AND s.vendor_id = ?';
+//     params.push(vendor_id);
+//   }
+
+//   sql += ' ORDER BY s.id DESC';
+
+//   db.query(sql, params, (err, results) => {
+//     if (err) return res.status(500).json({ error: 'Database error', details: err });
+
+//     if (results.length === 0) {
+//       return res.json({ status: true, message: 'No services found', data: [] });
+//     }
+
+//     const serviceIds = results.map(r => r.service_id);
+//     if (serviceIds.length === 0) {
+//       return res.json({ status: true, message: 'Services fetched successfully', data: results });
+//     }
+
+//     const slotQuery = `SELECT * FROM service_slots WHERE service_id IN (?)`;
+//     db.query(slotQuery, [serviceIds], (err2, slotResults) => {
+//       if (err2) return res.status(500).json({ error: 'Failed to fetch slots' });
+
+//       const slotsMap = {};
+//       slotResults.forEach(slot => {
+//         if (!slotsMap[slot.service_id]) slotsMap[slot.service_id] = [];
+//         slotsMap[slot.service_id].push({
+//           id: slot.id,
+//           date: slot.slot_date,
+//           time: slot.slot_time
+//         });
+//       });
+
+//       const finalResults = results.map(service => ({
+//         ...service,
+//         slots: service.service_type === "scheduled" ? (slotsMap[service.service_id] || []) : []
+//       }));
+
+//       res.json({
+//         status: true,
+//         message: 'Services fetched successfully',
+//         data: finalResults,
+//       });
+//     });
+//   });
+// });
+
+router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) => {
   const service_id = req.params.id;
   const {
-    sub_category_id,
-    service_description,
-    price,
-    approx_time,
-    vendor_id,
-    service_type,
-    location,
-    meet_link,
-    slots // array of { date, time }
+    sub_category_id, service_description, price, approx_time,
+    vendor_id, service_type, location, meet_link, slots
   } = req.body;
 
   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
     return res.status(400).json({ error: 'All fields are required' });
   }
-
   if (location === "google_meet" && !meet_link) {
     return res.status(400).json({ error: 'Meet link required for Google Meet location' });
   }
 
-  // 1. Get service name from subcategory
-  const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
-  db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
+  // New gallery images
+  const gallery = req.files?.map(file => file.filename) || [];
+
+  // 1. Get service name
+  db.query('SELECT name FROM service_subcategories WHERE id = ?', [sub_category_id], (err, subResults) => {
     if (err) return res.status(500).json({ error: 'Database error' });
     if (subResults.length === 0) return res.status(404).json({ error: 'Subcategory not found' });
 
     const service_name = subResults[0].name;
 
-    // 2. Update services table
+    // 2. Update service
     const updateQuery = `
       UPDATE services SET 
-        sub_category_id = ?, 
-        service_name = ?, 
-        service_description = ?, 
-        price = ?, 
-        approx_time = ?, 
-        vendor_id = ?, 
-        service_type = ?, 
-        location = ?, 
-        meet_link = ?
-      WHERE id = ?
+        sub_category_id=?, service_name=?, service_description=?, price=?, approx_time=?, 
+        vendor_id=?, service_type=?, location=?, meet_link=?, gallery=?
+      WHERE id=?
     `;
-    const values = [sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link || null, service_id];
+    const values = [
+      sub_category_id, service_name, service_description, price, approx_time,
+      vendor_id, service_type, location, meet_link || null, JSON.stringify(gallery), service_id
+    ];
 
     db.query(updateQuery, values, (err2) => {
       if (err2) return res.status(500).json({ error: 'Failed to update service' });
 
-      // 3. If scheduled → update slots
-      if (service_type === "scheduled" && Array.isArray(slots)) {
-        // First delete old slots
-        db.query('DELETE FROM service_slots WHERE service_id = ?', [service_id], (err3) => {
-          if (err3) return res.status(500).json({ error: 'Failed to update slots' });
-
-          if (slots.length > 0) {
-            const slotValues = slots.map(s => [service_id, s.date, s.time]);
-            const slotQuery = `INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?`;
-
-            db.query(slotQuery, [slotValues], (err4) => {
-              if (err4) return res.status(500).json({ error: 'Failed to insert new slots' });
-
-              return res.json({ message: 'Service updated successfully with slots', service_id });
+      // 3. Slots update
+      if (service_type === "scheduled" && slots && Array.isArray(JSON.parse(slots))) {
+        db.query('DELETE FROM service_slots WHERE service_id=?', [service_id], (err3) => {
+          if (err3) return res.status(500).json({ error: 'Failed to clear old slots' });
+          const slotValues = JSON.parse(slots).map(s => [service_id, s.date, s.time]);
+          if (slotValues.length > 0) {
+            db.query('INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?', [slotValues], (err4) => {
+              if (err4) return res.status(500).json({ error: 'Failed to insert slots' });
+              return res.json({ message: 'Service updated with slots & images', service_id, gallery });
             });
           } else {
-            return res.json({ message: 'Service updated successfully (slots cleared)', service_id });
+            return res.json({ message: 'Service updated (slots cleared)', service_id, gallery });
           }
         });
       } else {
-        // If not scheduled, remove any old slots
-        db.query('DELETE FROM service_slots WHERE service_id = ?', [service_id], () => {
-          return res.json({ message: 'Service updated successfully', service_id });
+        db.query('DELETE FROM service_slots WHERE service_id=?', [service_id], () => {
+          return res.json({ message: 'Service updated successfully', service_id, gallery });
         });
       }
     });
   });
 });
+
+// router.put('/update-service/:id', (req, res) => {
+//   const service_id = req.params.id;
+//   const {
+//     sub_category_id,
+//     service_description,
+//     price,
+//     approx_time,
+//     vendor_id,
+//     service_type,
+//     location,
+//     meet_link,
+//     slots // array of { date, time }
+//   } = req.body;
+
+//   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
+//     return res.status(400).json({ error: 'All fields are required' });
+//   }
+
+//   if (location === "google_meet" && !meet_link) {
+//     return res.status(400).json({ error: 'Meet link required for Google Meet location' });
+//   }
+
+//   // 1. Get service name from subcategory
+//   const subCategoryQuery = 'SELECT name FROM service_subcategories WHERE id = ?';
+//   db.query(subCategoryQuery, [sub_category_id], (err, subResults) => {
+//     if (err) return res.status(500).json({ error: 'Database error' });
+//     if (subResults.length === 0) return res.status(404).json({ error: 'Subcategory not found' });
+
+//     const service_name = subResults[0].name;
+
+//     // 2. Update services table
+//     const updateQuery = `
+//       UPDATE services SET 
+//         sub_category_id = ?, 
+//         service_name = ?, 
+//         service_description = ?, 
+//         price = ?, 
+//         approx_time = ?, 
+//         vendor_id = ?, 
+//         service_type = ?, 
+//         location = ?, 
+//         meet_link = ?
+//       WHERE id = ?
+//     `;
+//     const values = [sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link || null, service_id];
+
+//     db.query(updateQuery, values, (err2) => {
+//       if (err2) return res.status(500).json({ error: 'Failed to update service' });
+
+//       // 3. If scheduled → update slots
+//       if (service_type === "scheduled" && Array.isArray(slots)) {
+//         // First delete old slots
+//         db.query('DELETE FROM service_slots WHERE service_id = ?', [service_id], (err3) => {
+//           if (err3) return res.status(500).json({ error: 'Failed to update slots' });
+
+//           if (slots.length > 0) {
+//             const slotValues = slots.map(s => [service_id, s.date, s.time]);
+//             const slotQuery = `INSERT INTO service_slots (service_id, slot_date, slot_time) VALUES ?`;
+
+//             db.query(slotQuery, [slotValues], (err4) => {
+//               if (err4) return res.status(500).json({ error: 'Failed to insert new slots' });
+
+//               return res.json({ message: 'Service updated successfully with slots', service_id });
+//             });
+//           } else {
+//             return res.json({ message: 'Service updated successfully (slots cleared)', service_id });
+//           }
+//         });
+//       } else {
+//         // If not scheduled, remove any old slots
+//         db.query('DELETE FROM service_slots WHERE service_id = ?', [service_id], () => {
+//           return res.json({ message: 'Service updated successfully', service_id });
+//         });
+//       }
+//     });
+//   });
+// });
 
 
 router.delete('/delete-service/:id', (req, res) => {
