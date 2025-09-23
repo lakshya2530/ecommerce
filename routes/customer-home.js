@@ -81,9 +81,18 @@ const crypto = require("crypto");
 router.get('/customer/home', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
-    const search = req.query.search || null; // 🔎 search term
 
-    // 1. Get product categories
+    // Helper: safe JSON parse
+    const safeJsonParse = (str, fallback = []) => {
+      if (!str) return fallback;
+      try {
+        return JSON.parse(str);
+      } catch (e) {
+        return fallback;
+      }
+    };
+
+    // 1. Categories
     const categories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
@@ -95,19 +104,7 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 2. Get service categories
-    const serviceCategories = await new Promise((resolve, reject) => {
-      db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
-        if (err) return reject(err);
-        const formatted = results.map(sc => ({
-          ...sc,
-         // image: sc.image ? `${baseUrl}/service_categories/${sc.image}` : ''
-        }));
-        resolve(formatted);
-      });
-    });
-
-    // 3. Vendor banners (ads)
+    // 2. Vendor banners
     const vendorBanners = await new Promise((resolve, reject) => {
       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
@@ -119,92 +116,68 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 4. Latest 10 products (with search support)
-    const productSQL = `
-      SELECT * FROM products 
-      WHERE status = "active" 
-      ${search ? 'AND name LIKE ?' : ''} 
-      ORDER BY id DESC LIMIT 10
-    `;
-    const productParams = search ? [`%${search}%`] : [];
+    // 3. Latest Products
     const products = await new Promise((resolve, reject) => {
-      db.query(productSQL, productParams, (err, results) => {
+      db.query('SELECT * FROM products WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
         const formatted = results.map(p => ({
           ...p,
-          images: JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`),
-          specifications: (() => {
-            try {
-              return JSON.parse(p.specifications || '[]');
-            } catch (e) {
-              return [];
-            }
-          })()
+          images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
+          specifications: safeJsonParse(p.specifications, [])
         }));
         resolve(formatted);
       });
     });
 
-    // 5. Latest 10 services (with search support)
-    const serviceSQL = `
-      SELECT * FROM services 
-      WHERE 1=1 
-      ${search ? 'AND service_name LIKE ?' : ''} 
-      ORDER BY id DESC LIMIT 10
-    `;
-    const serviceParams = search ? [`%${search}%`] : [];
+    // 4. Latest Services
     const services = await new Promise((resolve, reject) => {
-      db.query(serviceSQL, serviceParams, (err, results) => {
+      db.query('SELECT * FROM services WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
-        const formatted = results.map(s => ({
-          ...s,
-          gallery: s.gallery ? JSON.parse(s.gallery).map(img => `${baseUrl}/services/${img}`) : [],
-          brands: s.brands ? JSON.parse(s.brands) : [],
-          features: s.features ? JSON.parse(s.features) : [],
-          exclusions: s.exclusions ? JSON.parse(s.exclusions) : [],
-          previous_work: s.previous_work ? JSON.parse(s.previous_work) : []
-        }));
+        const formatted = results.map(s => {
+          const galleryArr = safeJsonParse(s.gallery, []);
+          return {
+            ...s,
+            gallery: galleryArr.map(img => `${baseUrl}/services/${img}`),
+            brands: safeJsonParse(s.brands, []),
+            features: safeJsonParse(s.features, []),
+            exclusions: safeJsonParse(s.exclusions, []),
+            previous_work: safeJsonParse(s.previous_work, [])
+          };
+        });
         resolve(formatted);
       });
     });
 
-    // 6. Vendor shops (with search support)
-    const shopSQL = `
-      SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document 
-      FROM vendor_shops 
-      WHERE 1=1 
-      ${search ? 'AND shop_name LIKE ?' : ''} 
-      ORDER BY id DESC
-    `;
-    const shopParams = search ? [`%${search}%`] : [];
+    // 5. Vendor Shops
     const shops = await new Promise((resolve, reject) => {
-      db.query(shopSQL, shopParams, (err, results) => {
-        if (err) return reject(err);
-        const formatted = results.map(s => ({
-          ...s,
-          shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
-          shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
-          additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
-        }));
-        resolve(formatted);
-      });
+      db.query(
+        'SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document FROM vendor_shops ORDER BY id DESC',
+        (err, results) => {
+          if (err) return reject(err);
+          const formatted = results.map(s => ({
+            ...s,
+            shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+            shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+            additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
+          }));
+          resolve(formatted);
+        }
+      );
     });
 
-    // ✅ Final Response
     res.json({
       categories,
-      service_categories: serviceCategories,
       vendor_banners: vendorBanners,
       latest_products: products,
       latest_services: services,
       shops
     });
-
   } catch (error) {
     console.error('Home page error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 router.get('/customer/shops', (req, res) => {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
