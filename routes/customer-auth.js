@@ -55,15 +55,15 @@ router.post('/customer-signup', async (req, res) => {
 });
 
 router.post("/register-customer", (req, res) => {
-  const { full_name, email, phone, password, confirm_password } = req.body;
+  const { full_name, email, phone, password, confirm_password, referral_code } = req.body;
 
   if (password !== confirm_password)
     return res.status(400).json({ message: "Passwords do not match" });
 
   const emailSQL = "SELECT * FROM otp_verifications WHERE email = ? AND type = 'email' AND is_verified = 1";
   const phoneSQL = "SELECT * FROM otp_verifications WHERE phone = ? AND type = 'phone' AND is_verified = 1";
-
   const userExistsSQL = "SELECT * FROM users WHERE email = ? OR phone = ?";
+
   db.query(userExistsSQL, [email, phone], (existsErr, users) => {
     if (existsErr) {
       console.error("User check error:", existsErr);
@@ -74,7 +74,7 @@ router.post("/register-customer", (req, res) => {
       return res.status(400).json({ error: "User with this email or phone already exists" });
     }
 
-    // 🟢 Move the rest of the logic inside this block
+    // ✅ Verify email and phone OTP
     db.query(emailSQL, [email], (err1, emailRows) => {
       if (err1) return res.status(500).json({ error: "Email check failed" });
 
@@ -85,26 +85,123 @@ router.post("/register-customer", (req, res) => {
           return res.status(400).json({ message: "Email and Phone must be verified" });
         }
 
-        bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
-          if (hashErr) return res.status(500).json({ error: "Hashing error" });
+        // ✅ Generate unique referral code
+        const newReferralCode = "REF" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
-          const insertSQL = `
-            INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type)
-            VALUES (?, ?, ?, ?, 1, 1, 1, 'customer')
-          `;
-          db.query(insertSQL, [full_name, email, phone, hashedPassword], (insertErr, result) => {
-            if (insertErr) {
-              console.error("Insert error:", insertErr);
-              return res.status(500).json({ error: "Insert error", details: insertErr.message });
+        // ✅ Check if user entered referral_code is valid
+        if (referral_code) {
+          const refSQL = "SELECT id FROM users WHERE referral_code = ?";
+          db.query(refSQL, [referral_code], (refErr, refRows) => {
+            if (refErr) return res.status(500).json({ error: "Referral check failed" });
+
+            let referredBy = null;
+            if (refRows.length > 0) {
+              referredBy = refRows[0].id;
             }
 
-            res.json({ success: true, message: "User registered successfully", user_id: result.insertId });
+            // 🔒 Hash password
+            bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+              if (hashErr) return res.status(500).json({ error: "Hashing error" });
+
+              const insertSQL = `
+                INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type, referral_code, referred_by)
+                VALUES (?, ?, ?, ?, 1, 1, 1, 'customer', ?, ?)
+              `;
+              db.query(insertSQL, [full_name, email, phone, hashedPassword, newReferralCode, referredBy], (insertErr, result) => {
+                if (insertErr) {
+                  console.error("Insert error:", insertErr);
+                  return res.status(500).json({ error: "Insert error", details: insertErr.message });
+                }
+
+                res.json({ 
+                  success: true, 
+                  message: "User registered successfully", 
+                  user_id: result.insertId, 
+                  referral_code: newReferralCode 
+                });
+              });
+            });
           });
-        });
+        } else {
+          // 🚀 No referral entered
+          bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+            if (hashErr) return res.status(500).json({ error: "Hashing error" });
+
+            const insertSQL = `
+              INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type, referral_code)
+              VALUES (?, ?, ?, ?, 1, 1, 1, 'customer', ?)
+            `;
+            db.query(insertSQL, [full_name, email, phone, hashedPassword, newReferralCode], (insertErr, result) => {
+              if (insertErr) {
+                console.error("Insert error:", insertErr);
+                return res.status(500).json({ error: "Insert error", details: insertErr.message });
+              }
+
+              res.json({ 
+                success: true, 
+                message: "User registered successfully", 
+                user_id: result.insertId, 
+                referral_code: newReferralCode 
+              });
+            });
+          });
+        }
       });
     });
   });
 });
+
+// router.post("/register-customer", (req, res) => {
+//   const { full_name, email, phone, password, confirm_password } = req.body;
+
+//   if (password !== confirm_password)
+//     return res.status(400).json({ message: "Passwords do not match" });
+
+//   const emailSQL = "SELECT * FROM otp_verifications WHERE email = ? AND type = 'email' AND is_verified = 1";
+//   const phoneSQL = "SELECT * FROM otp_verifications WHERE phone = ? AND type = 'phone' AND is_verified = 1";
+
+//   const userExistsSQL = "SELECT * FROM users WHERE email = ? OR phone = ?";
+//   db.query(userExistsSQL, [email, phone], (existsErr, users) => {
+//     if (existsErr) {
+//       console.error("User check error:", existsErr);
+//       return res.status(500).json({ error: "User check failed", details: existsErr.message });
+//     }
+
+//     if (users.length > 0) {
+//       return res.status(400).json({ error: "User with this email or phone already exists" });
+//     }
+
+//     // 🟢 Move the rest of the logic inside this block
+//     db.query(emailSQL, [email], (err1, emailRows) => {
+//       if (err1) return res.status(500).json({ error: "Email check failed" });
+
+//       db.query(phoneSQL, [phone], (err2, phoneRows) => {
+//         if (err2) return res.status(500).json({ error: "Phone check failed" });
+
+//         if (!emailRows.length || !phoneRows.length) {
+//           return res.status(400).json({ message: "Email and Phone must be verified" });
+//         }
+
+//         bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+//           if (hashErr) return res.status(500).json({ error: "Hashing error" });
+
+//           const insertSQL = `
+//             INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type)
+//             VALUES (?, ?, ?, ?, 1, 1, 1, 'customer')
+//           `;
+//           db.query(insertSQL, [full_name, email, phone, hashedPassword], (insertErr, result) => {
+//             if (insertErr) {
+//               console.error("Insert error:", insertErr);
+//               return res.status(500).json({ error: "Insert error", details: insertErr.message });
+//             }
+
+//             res.json({ success: true, message: "User registered successfully", user_id: result.insertId });
+//           });
+//         });
+//       });
+//     });
+//   });
+// });
 
 
 // ✅ Login

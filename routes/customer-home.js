@@ -5,11 +5,85 @@ const authenticate = require('../middleware/auth');
 const razorpay = require("../config/razorpay"); // import config
 const crypto = require("crypto");
 
+// router.get('/customer/home', async (req, res) => {
+//   try {
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+//     // 1. Get all categories with image
+//     const categories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(c => ({
+//           ...c,
+//           image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     // 2. Get vendor banners (ads)
+//     const vendorBanners = await new Promise((resolve, reject) => {
+//       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(ad => ({
+//           image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+//           image_link: ad.image_link
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     // 3. Get popular/latest products
+//     const products = await new Promise((resolve, reject) => {
+//       db.query('SELECT * FROM products WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(p => ({
+//           ...p,
+//           images: JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`),
+//           specifications: (() => {
+//             try {
+//               return JSON.parse(p.specifications || '[]');
+//             } catch (e) {
+//               return [];
+//             }
+//           })()
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     // 4. Get vendor shop list
+//     const shops = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document FROM vendor_shops ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(s => ({
+//           ...s,
+//           shop_image:s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+//           shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+//           additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     res.json({
+//       categories,
+//       vendor_banners: vendorBanners,
+//       popular_products: products,
+//       shops
+//     });
+//   } catch (error) {
+//     console.error('Home page error:', error);
+//     res.status(500).json({ error: 'Server error' });
+//   }
+// });
+
 router.get('/customer/home', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+    const search = req.query.search || null; // 🔎 search term
 
-    // 1. Get all categories with image
+    // 1. Get product categories
     const categories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
@@ -21,7 +95,19 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 2. Get vendor banners (ads)
+    // 2. Get service categories
+    const serviceCategories = await new Promise((resolve, reject) => {
+      db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
+        if (err) return reject(err);
+        const formatted = results.map(sc => ({
+          ...sc,
+         // image: sc.image ? `${baseUrl}/service_categories/${sc.image}` : ''
+        }));
+        resolve(formatted);
+      });
+    });
+
+    // 3. Vendor banners (ads)
     const vendorBanners = await new Promise((resolve, reject) => {
       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
@@ -33,9 +119,16 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 3. Get popular/latest products
+    // 4. Latest 10 products (with search support)
+    const productSQL = `
+      SELECT * FROM products 
+      WHERE status = "active" 
+      ${search ? 'AND name LIKE ?' : ''} 
+      ORDER BY id DESC LIMIT 10
+    `;
+    const productParams = search ? [`%${search}%`] : [];
     const products = await new Promise((resolve, reject) => {
-      db.query('SELECT * FROM products WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
+      db.query(productSQL, productParams, (err, results) => {
         if (err) return reject(err);
         const formatted = results.map(p => ({
           ...p,
@@ -52,13 +145,44 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 4. Get vendor shop list
-    const shops = await new Promise((resolve, reject) => {
-      db.query('SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document FROM vendor_shops ORDER BY id DESC', (err, results) => {
+    // 5. Latest 10 services (with search support)
+    const serviceSQL = `
+      SELECT * FROM services 
+      WHERE 1=1 
+      ${search ? 'AND service_name LIKE ?' : ''} 
+      ORDER BY id DESC LIMIT 10
+    `;
+    const serviceParams = search ? [`%${search}%`] : [];
+    const services = await new Promise((resolve, reject) => {
+      db.query(serviceSQL, serviceParams, (err, results) => {
         if (err) return reject(err);
         const formatted = results.map(s => ({
           ...s,
-          shop_image:s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+          gallery: s.gallery ? JSON.parse(s.gallery).map(img => `${baseUrl}/services/${img}`) : [],
+          brands: s.brands ? JSON.parse(s.brands) : [],
+          features: s.features ? JSON.parse(s.features) : [],
+          exclusions: s.exclusions ? JSON.parse(s.exclusions) : [],
+          previous_work: s.previous_work ? JSON.parse(s.previous_work) : []
+        }));
+        resolve(formatted);
+      });
+    });
+
+    // 6. Vendor shops (with search support)
+    const shopSQL = `
+      SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document 
+      FROM vendor_shops 
+      WHERE 1=1 
+      ${search ? 'AND shop_name LIKE ?' : ''} 
+      ORDER BY id DESC
+    `;
+    const shopParams = search ? [`%${search}%`] : [];
+    const shops = await new Promise((resolve, reject) => {
+      db.query(shopSQL, shopParams, (err, results) => {
+        if (err) return reject(err);
+        const formatted = results.map(s => ({
+          ...s,
+          shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
           shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
           additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
         }));
@@ -66,12 +190,16 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+    // ✅ Final Response
     res.json({
       categories,
+      service_categories: serviceCategories,
       vendor_banners: vendorBanners,
-      popular_products: products,
+      latest_products: products,
+      latest_services: services,
       shops
     });
+
   } catch (error) {
     console.error('Home page error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -886,7 +1014,7 @@ router.get('/customer/shops', (req, res) => {
       JOIN order_items ot ON o.id = ot.order_id
       JOIN products p ON o.product_id = p.id
       JOIN users u ON o.vendor_id = u.id
-      LEFT JOIN users dp ON o.assigned_to = dp.id -- delivery partner
+      LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
       WHERE o.customer_id = ?
       ORDER BY o.order_date DESC
     `;
@@ -1479,7 +1607,7 @@ router.get('/customer/bookings', authenticate, (req, res) => {
 
 
 router.post('/add-address', authenticate, (req, res) => {
-  const { name, description,latitude,longitude } = req.body;
+  const { name, description,city,state,postal_code,latitude,longitude } = req.body;
   const customer_id = req.user.id;
 
   if (!name || !description) {
@@ -1487,10 +1615,10 @@ router.post('/add-address', authenticate, (req, res) => {
   }
 
   const sql = `
-    INSERT INTO customer_addresses (customer_id, name, description,latitude,longitude)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO customer_addresses (customer_id, name, description,city,state,postal_code,latitude,longitude)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(sql, [customer_id, name, description,latitude,longitude], (err, result) => {
+  db.query(sql, [customer_id, name, description,city,state,postal_code,latitude,longitude], (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
 
     res.json({
@@ -1507,7 +1635,7 @@ router.get('/list-addresses', authenticate, (req, res) => {
   const customer_id = req.user.id;
 
   const sql = `
-    SELECT id, name, description,latitude,longitude, created_at 
+    SELECT id, name, description,city,state,postal_code,latitude,longitude, created_at 
     FROM customer_addresses 
     WHERE customer_id = ? 
     ORDER BY id DESC
@@ -1594,6 +1722,103 @@ router.get('/my-chats', authenticate, (req, res) => {
 });
 
 
+
+
+router.post("/wallet/create-order", async (req, res) => {
+  const { user_id, user_type, amount } = req.body;
+
+  try {
+    const options = {
+      amount: amount * 100, // in paise
+      currency: "INR",
+      receipt: `wallet_topup_${user_id}_${Date.now()}`,
+      notes: { user_id, user_type }
+    };
+
+    const order = await razorpay.orders.create(options);
+    res.json({ success: true, order });
+  } catch (error) {
+    console.error("Razorpay Order Error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post("/wallet/verify", (req, res) => {
+  const { user_id, user_type, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
+
+  // ✅ Step 1: Verify Signature
+  const sign = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+    .update(razorpay_order_id + "|" + razorpay_payment_id)
+    .digest("hex");
+
+  if (sign !== razorpay_signature) {
+    return res.status(400).json({ success: false, message: "Invalid payment signature" });
+  }
+
+  // ✅ Step 2: Credit Wallet
+  const getWalletSQL = "SELECT * FROM wallets WHERE user_id = ? AND user_type = ?";
+  db.query(getWalletSQL, [user_id, user_type], (err, wallets) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (!wallets.length) return res.status(404).json({ error: "Wallet not found" });
+
+    const wallet = wallets[0];
+    const newBalance = parseFloat(wallet.balance) + parseFloat(amount);
+
+    const updateSQL = "UPDATE wallets SET balance = ? WHERE id = ?";
+    db.query(updateSQL, [newBalance, wallet.id], (err2) => {
+      if (err2) return res.status(500).json({ error: "Update error" });
+
+      const txnSQL = `
+        INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, description)
+        VALUES (?, 'credit', ?, 'Wallet Topup via Razorpay')
+      `;
+      db.query(txnSQL, [wallet.id, amount], (err3) => {
+        if (err3) return res.status(500).json({ error: "Transaction error" });
+        res.json({ success: true, balance: newBalance });
+      });
+    });
+  });
+});
+
+
+router.get("/wallet/details", (req, res) => {
+  const { user_id, user_type } = req.query;
+
+  if (!user_id || !user_type) {
+    return res.status(400).json({ error: "user_id and user_type are required" });
+  }
+
+  const walletSQL = "SELECT * FROM wallets WHERE user_id = ? AND user_type = ?";
+  db.query(walletSQL, [user_id, user_type], (err, walletRows) => {
+    if (err) return res.status(500).json({ error: "Database error", details: err.message });
+
+    if (!walletRows.length) {
+      return res.json({
+        success: true,
+        wallet: { user_id, user_type, balance: 0 },
+        transactions: []
+      });
+    }
+
+    const wallet = walletRows[0];
+
+    const txnSQL = "SELECT * FROM wallet_transactions WHERE wallet_id = ? ORDER BY id DESC LIMIT 20";
+    db.query(txnSQL, [wallet.id], (err2, txnRows) => {
+      if (err2) return res.status(500).json({ error: "Failed to fetch transactions" });
+
+      res.json({
+        success: true,
+        wallet: {
+          user_id: wallet.user_id,
+          user_type: wallet.user_type,
+          balance: wallet.balance
+        },
+        transactions: txnRows
+      });
+    });
+  });
+});
 
 
 
