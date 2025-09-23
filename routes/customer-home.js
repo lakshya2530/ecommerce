@@ -150,10 +150,11 @@ router.get('/customer/home', async (req, res) => {
 
     // 5. Latest 10 services (with search)
     const serviceSQL = `
-      SELECT * FROM services 
-      ${search ? 'AND service_name LIKE ?' : ''} 
-      ORDER BY id DESC LIMIT 10
-    `;
+    SELECT * FROM services 
+    WHERE 1=1
+    ${search ? 'AND service_name LIKE ?' : ''} 
+    ORDER BY id DESC LIMIT 10
+  `;
     const serviceParams = search ? [`%${search}%`] : [];
     const services = await new Promise((resolve, reject) => {
       db.query(serviceSQL, serviceParams, (err, results) => {
