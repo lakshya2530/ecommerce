@@ -131,7 +131,7 @@ router.get('/customer/home', async (req, res) => {
 
     // 4. Latest Services
     const services = await new Promise((resolve, reject) => {
-      db.query('SELECT * FROM services WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
+      db.query('SELECT * FROM services ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
         const formatted = results.map(s => {
           const galleryArr = safeJsonParse(s.gallery, []);
