@@ -81,8 +81,9 @@ const crypto = require("crypto");
 router.get('/customer/home', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+    const search = req.query.search || null; // 🔎 search term
 
-    // Helper: safe JSON parse
+    // helper to safely parse JSON
     const safeJsonParse = (str, fallback = []) => {
       if (!str) return fallback;
       try {
@@ -92,81 +93,112 @@ router.get('/customer/home', async (req, res) => {
       }
     };
 
-    // 1. Categories
+    // 1. Get product categories
     const categories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
-        const formatted = results.map(c => ({
-          ...c,
-          image: c.image ? `${baseUrl}/categories/${c.image}` : ''
-        }));
-        resolve(formatted);
+        resolve(
+          results.map(c => ({
+            ...c,
+            image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+          }))
+        );
       });
     });
 
-    // 2. Vendor banners
+    // 2. Get service categories
+    const serviceCategories = await new Promise((resolve, reject) => {
+      db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
+        if (err) return reject(err);
+        resolve(results);
+      });
+    });
+
+    // 3. Vendor banners (ads)
     const vendorBanners = await new Promise((resolve, reject) => {
       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
-        const formatted = results.map(ad => ({
-          image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
-          image_link: ad.image_link
-        }));
-        resolve(formatted);
+        resolve(
+          results.map(ad => ({
+            image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+            image_link: ad.image_link
+          }))
+        );
       });
     });
 
-    // 3. Latest Products
+    // 4. Latest 10 products (with search)
+    const productSQL = `
+      SELECT * FROM products 
+      WHERE status = "active" 
+      ${search ? 'AND name LIKE ?' : ''} 
+      ORDER BY id DESC LIMIT 10
+    `;
+    const productParams = search ? [`%${search}%`] : [];
     const products = await new Promise((resolve, reject) => {
-      db.query('SELECT * FROM products WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
+      db.query(productSQL, productParams, (err, results) => {
         if (err) return reject(err);
-        const formatted = results.map(p => ({
-          ...p,
-          images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
-          specifications: safeJsonParse(p.specifications, [])
-        }));
-        resolve(formatted);
+        resolve(
+          results.map(p => ({
+            ...p,
+            images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
+            specifications: safeJsonParse(p.specifications, [])
+          }))
+        );
       });
     });
 
-    // 4. Latest Services
+    // 5. Latest 10 services (with search)
+    const serviceSQL = `
+      SELECT * FROM services 
+      ${search ? 'AND service_name LIKE ?' : ''} 
+      ORDER BY id DESC LIMIT 10
+    `;
+    const serviceParams = search ? [`%${search}%`] : [];
     const services = await new Promise((resolve, reject) => {
-      db.query('SELECT * FROM services ORDER BY id DESC LIMIT 10', (err, results) => {
+      db.query(serviceSQL, serviceParams, (err, results) => {
         if (err) return reject(err);
-        const formatted = results.map(s => {
-          const galleryArr = safeJsonParse(s.gallery, []);
-          return {
+        resolve(
+          results.map(s => ({
             ...s,
-            gallery: galleryArr.map(img => `${baseUrl}/services/${img}`),
+            gallery: safeJsonParse(s.gallery, []).map(img => `${baseUrl}/services/${img}`),
             brands: safeJsonParse(s.brands, []),
             features: safeJsonParse(s.features, []),
             exclusions: safeJsonParse(s.exclusions, []),
             previous_work: safeJsonParse(s.previous_work, [])
-          };
-        });
-        resolve(formatted);
+          }))
+        );
       });
     });
 
-    // 5. Vendor Shops
+    // 6. Vendor shops (with search)
+    const shopSQL = `
+      SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document 
+      FROM vendor_shops 
+      WHERE 1=1 
+      ${search ? 'AND shop_name LIKE ?' : ''} 
+      ORDER BY id DESC LIMIT 10
+    `;
+    const shopParams = search ? [`%${search}%`] : [];
     const shops = await new Promise((resolve, reject) => {
-      db.query(
-        'SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document FROM vendor_shops ORDER BY id DESC',
-        (err, results) => {
-          if (err) return reject(err);
-          const formatted = results.map(s => ({
+      db.query(shopSQL, shopParams, (err, results) => {
+        if (err) return reject(err);
+        resolve(
+          results.map(s => ({
             ...s,
             shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
             shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
             additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
-          }));
-          resolve(formatted);
-        }
-      );
+          }))
+        );
+      });
     });
 
+    // ✅ Final Response
     res.json({
+      search_query: search || '',
       categories,
+      service_categories: serviceCategories,
       vendor_banners: vendorBanners,
       latest_products: products,
       latest_services: services,
