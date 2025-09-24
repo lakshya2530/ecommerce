@@ -1729,25 +1729,67 @@ router.get('/my-chats', authenticate, (req, res) => {
 
 
 
-
 router.post("/wallet/create-order", async (req, res) => {
   const { user_id, user_type, amount } = req.body;
 
+  if (!user_id || !user_type || !amount) {
+    return res.status(400).json({ success: false, error: "Missing required fields" });
+  }
+
   try {
+    // 1. Create Razorpay order
     const options = {
-      amount: amount * 100, // in paise
+      amount: amount * 100, // paise
       currency: "INR",
       receipt: `wallet_topup_${user_id}_${Date.now()}`,
       notes: { user_id, user_type }
     };
 
     const order = await razorpay.orders.create(options);
-    res.json({ success: true, order });
+
+    // 2. Insert entry in wallets table (status: pending)
+    const insertSQL = `
+      INSERT INTO wallets (user_id, user_type, amount, status, razorpay_order_id)
+      VALUES (?, ?, ?, 'pending', ?)
+    `;
+    db.query(insertSQL, [user_id, user_type, amount, order.id], (err, result) => {
+      if (err) {
+        console.error("Wallet insert error:", err);
+        return res.status(500).json({ success: false, error: err.message });
+      }
+
+      res.json({
+        success: true,
+        razorpay_order: order,
+        wallet_id: result.insertId
+      });
+    });
+
   } catch (error) {
     console.error("Razorpay Order Error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+
+// router.post("/wallet/create-order", async (req, res) => {
+//   const { user_id, user_type, amount } = req.body;
+
+//   try {
+//     const options = {
+//       amount: amount * 100, // in paise
+//       currency: "INR",
+//       receipt: `wallet_topup_${user_id}_${Date.now()}`,
+//       notes: { user_id, user_type }
+//     };
+
+//     const order = await razorpay.orders.create(options);
+//     res.json({ success: true, order });
+//   } catch (error) {
+//     console.error("Razorpay Order Error:", error);
+//     res.status(500).json({ success: false, error: error.message });
+//   }
+// });
 
 router.post("/wallet/verify", (req, res) => {
   const { user_id, user_type, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
