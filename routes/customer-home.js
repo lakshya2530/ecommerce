@@ -1731,10 +1731,7 @@ router.get('/my-chats', authenticate, (req, res) => {
 
 router.post("/wallet/create-order", async (req, res) => {
   const { user_id, user_type, amount } = req.body;
-
-  if (!user_id || !user_type || !amount) {
-    return res.status(400).json({ success: false, error: "Missing required fields" });
-  }
+  if (!user_id || !user_type || !amount) return res.status(400).json({ error: "Missing fields" });
 
   try {
     // 1. Create Razorpay order
@@ -1744,32 +1741,43 @@ router.post("/wallet/create-order", async (req, res) => {
       receipt: `wallet_topup_${user_id}_${Date.now()}`,
       notes: { user_id, user_type }
     };
-
     const order = await razorpay.orders.create(options);
 
-    // 2. Insert entry in wallets table (status: pending)
-    const insertSQL = `
-      INSERT INTO wallets (user_id, user_type, balance, status, razorpay_order_id)
-      VALUES (?, ?, ?, 'pending', ?)
+    // 2. Ensure wallet exists
+    const walletSQL = `
+      INSERT INTO wallets (user_id, user_type, balance)
+      VALUES (?, ?, 0)
+      ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)
     `;
-    db.query(insertSQL, [user_id, user_type, amount, order.id], (err, result) => {
-      if (err) {
-        console.error("Wallet insert error:", err);
-        return res.status(500).json({ success: false, error: err.message });
-      }
+    db.query(walletSQL, [user_id, user_type], (err, walletResult) => {
+      if (err) return res.status(500).json({ error: err.message });
 
-      res.json({
-        success: true,
-        razorpay_order: order,
-        wallet_id: result.insertId
+      const wallet_id = walletResult.insertId;
+
+      // 3. Insert pending transaction
+      const txnSQL = `
+        INSERT INTO wallet_transactions 
+          (wallet_id, transaction_type, amount, description, razorpay_order_id)
+        VALUES (?, 'credit', ?, 'Wallet Topup Pending', ?)
+      `;
+      db.query(txnSQL, [wallet_id, amount, order.id], (err2, txnResult) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+
+        res.json({
+          success: true,
+          wallet_id,
+          transaction_id: txnResult.insertId,
+          razorpay_order: order
+        });
       });
     });
 
   } catch (error) {
     console.error("Razorpay Order Error:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
+
 
 
 // router.post("/wallet/create-order", async (req, res) => {
@@ -1791,44 +1799,80 @@ router.post("/wallet/create-order", async (req, res) => {
 //   }
 // });
 
-router.post("/wallet/verify", (req, res) => {
-  const { user_id, user_type, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
+// router.post("/wallet/verify", (req, res) => {
+//   const { user_id, user_type, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
 
-  // ✅ Step 1: Verify Signature
+//   // ✅ Step 1: Verify Signature
+//   const sign = crypto
+//     .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+//     .update(razorpay_order_id + "|" + razorpay_payment_id)
+//     .digest("hex");
+
+//   if (sign !== razorpay_signature) {
+//     return res.status(400).json({ success: false, message: "Invalid payment signature" });
+//   }
+
+//   // ✅ Step 2: Credit Wallet
+//   const getWalletSQL = "SELECT * FROM wallets WHERE user_id = ? AND user_type = ?";
+//   db.query(getWalletSQL, [user_id, user_type], (err, wallets) => {
+//     if (err) return res.status(500).json({ error: "Database error" });
+//     if (!wallets.length) return res.status(404).json({ error: "Wallet not found" });
+
+//     const wallet = wallets[0];
+//     const newBalance = parseFloat(wallet.balance) + parseFloat(amount);
+
+//     const updateSQL = "UPDATE wallets SET balance = ? WHERE id = ?";
+//     db.query(updateSQL, [newBalance, wallet.id], (err2) => {
+//       if (err2) return res.status(500).json({ error: "Update error" });
+
+//       const txnSQL = `
+//         INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, description)
+//         VALUES (?, 'credit', ?, 'Wallet Topup via Razorpay')
+//       `;
+//       db.query(txnSQL, [wallet.id, amount], (err3) => {
+//         if (err3) return res.status(500).json({ error: "Transaction error" });
+//         res.json({ success: true, balance: newBalance });
+//       });
+//     });
+//   });
+// });
+
+router.post("/wallet/verify", (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
   const sign = crypto
     .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
     .update(razorpay_order_id + "|" + razorpay_payment_id)
     .digest("hex");
 
-  if (sign !== razorpay_signature) {
-    return res.status(400).json({ success: false, message: "Invalid payment signature" });
-  }
+  if (sign !== razorpay_signature) return res.status(400).json({ success: false, message: "Invalid signature" });
 
-  // ✅ Step 2: Credit Wallet
-  const getWalletSQL = "SELECT * FROM wallets WHERE user_id = ? AND user_type = ?";
-  db.query(getWalletSQL, [user_id, user_type], (err, wallets) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    if (!wallets.length) return res.status(404).json({ error: "Wallet not found" });
+  // 1. Get pending transaction
+  const txnSQL = "SELECT * FROM wallet_transactions WHERE razorpay_order_id = ? AND transaction_type='credit'";
+  db.query(txnSQL, [razorpay_order_id], (err, txns) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!txns.length) return res.status(404).json({ error: "Transaction not found" });
 
-    const wallet = wallets[0];
-    const newBalance = parseFloat(wallet.balance) + parseFloat(amount);
+    const txn = txns[0];
 
-    const updateSQL = "UPDATE wallets SET balance = ? WHERE id = ?";
-    db.query(updateSQL, [newBalance, wallet.id], (err2) => {
-      if (err2) return res.status(500).json({ error: "Update error" });
+    // 2. Update wallet balance
+    const updateWalletSQL = "UPDATE wallets SET balance = balance + ? WHERE id = ?";
+    db.query(updateWalletSQL, [txn.amount, txn.wallet_id], (err2) => {
+      if (err2) return res.status(500).json({ error: err2.message });
 
-      const txnSQL = `
-        INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, description)
-        VALUES (?, 'credit', ?, 'Wallet Topup via Razorpay')
+      // 3. Update transaction to success
+      const updateTxnSQL = `
+        UPDATE wallet_transactions
+        SET razorpay_payment_id = ?, description = 'Wallet Topup Success'
+        WHERE id = ?
       `;
-      db.query(txnSQL, [wallet.id, amount], (err3) => {
-        if (err3) return res.status(500).json({ error: "Transaction error" });
-        res.json({ success: true, balance: newBalance });
+      db.query(updateTxnSQL, [razorpay_payment_id, txn.id], (err3) => {
+        if (err3) return res.status(500).json({ error: err3.message });
+        res.json({ success: true, wallet_id: txn.wallet_id, amount: txn.amount });
       });
     });
   });
 });
-
 
 router.get("/wallet/details", (req, res) => {
   const { user_id, user_type } = req.query;
