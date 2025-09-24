@@ -1863,7 +1863,7 @@ router.post("/wallet/verify", (req, res) => {
       // 3. Update transaction to success
       const updateTxnSQL = `
         UPDATE wallet_transactions
-        SET razorpay_payment_id = ?, description = 'Wallet Topup Success'
+        SET razorpay_payment_id = ?, description = 'Wallet Topup Success', status = 'success'
         WHERE id = ?
       `;
       db.query(updateTxnSQL, [razorpay_payment_id, txn.id], (err3) => {
