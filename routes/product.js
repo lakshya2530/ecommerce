@@ -19,6 +19,16 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { files: 5 } });
 
+const storage_c = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/categories'); // save in uploads/categories
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueName + path.extname(file.originalname));
+  }
+});
+const upload_c = multer({ storage_c });
 // Create Product
 router.post('/product-create', upload.array('images', 5), (req, res) => {
   const { name, description, actual_price,selling_price,quantity,type, category,sub_category, specifications, status = 'active' } = req.body;
@@ -285,13 +295,78 @@ router.get('/product-list', (req, res) => {
 //   });
 // });
 
-router.post('/category-create', (req, res) => {
+
+// router.post('/category-create', (req, res) => {
+//   const { name, parent_id = null, labels = '' } = req.body;
+
+//   const category = {
+//     name,
+//     parent_id,
+//     labels: Array.isArray(labels) ? JSON.stringify(labels) : labels
+//   };
+
+//   db.query('INSERT INTO categories SET ?', category, (err, result) => {
+//     if (err) return res.status(500).json({ error: err.message });
+//     res.json({ message: 'Category created', id: result.insertId });
+//   });
+// });
+
+// router.put('/category-update/:id', (req, res) => {
+//   const { id } = req.params;
+//   const { name, parent_id = null, labels = '' } = req.body;
+
+//   const updatedData = {
+//     name,
+//     parent_id,
+//     labels: Array.isArray(labels) ? JSON.stringify(labels) : labels
+//   };
+
+//   db.query('UPDATE categories SET ? WHERE id = ?', [updatedData, id], (err) => {
+//     if (err) return res.status(500).json({ error: err.message });
+//     res.json({ message: 'Category updated' });
+//   });
+// });
+
+// router.get('/category-list', (req, res) => {
+//   const sql = `
+//     SELECT 
+//       c1.id AS id,
+//       c1.name AS name,
+//       c1.parent_id,
+//       c1.labels,
+//       c2.name AS parent_name
+//     FROM categories c1
+//     LEFT JOIN categories c2 ON c1.parent_id = c2.id
+//     ORDER BY c1.id DESC
+//   `;
+
+//   db.query(sql, (err, results) => {
+//     if (err) return res.status(500).json({ error: err.message });
+
+//     const formatted = results.map(cat => ({
+//       ...cat,
+//       labels: (() => {
+//         try {
+//           return JSON.parse(cat.labels || '[]');
+//         } catch (e) {
+//           return [];
+//         }
+//       })()
+//     }));
+
+//     res.json(formatted);
+//   });
+// });
+
+
+router.post('/category-create', upload_c.single('image'), (req, res) => {
   const { name, parent_id = null, labels = '' } = req.body;
 
   const category = {
     name,
     parent_id,
-    labels: Array.isArray(labels) ? JSON.stringify(labels) : labels
+    labels: Array.isArray(labels) ? JSON.stringify(labels) : labels,
+    image: req.file ? req.file.filename : null
   };
 
   db.query('INSERT INTO categories SET ?', category, (err, result) => {
@@ -300,7 +375,8 @@ router.post('/category-create', (req, res) => {
   });
 });
 
-router.put('/category-update/:id', (req, res) => {
+// 🟡 Update Category
+router.put('/category-update/:id', upload_c.single('image'), (req, res) => {
   const { id } = req.params;
   const { name, parent_id = null, labels = '' } = req.body;
 
@@ -310,19 +386,27 @@ router.put('/category-update/:id', (req, res) => {
     labels: Array.isArray(labels) ? JSON.stringify(labels) : labels
   };
 
+  if (req.file) {
+    updatedData.image = req.file.filename;
+  }
+
   db.query('UPDATE categories SET ? WHERE id = ?', [updatedData, id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ message: 'Category updated' });
   });
 });
 
+// 🔵 Get Category List
 router.get('/category-list', (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads/categories`;
+
   const sql = `
     SELECT 
       c1.id AS id,
       c1.name AS name,
       c1.parent_id,
       c1.labels,
+      c1.image,
       c2.name AS parent_name
     FROM categories c1
     LEFT JOIN categories c2 ON c1.parent_id = c2.id
@@ -340,13 +424,13 @@ router.get('/category-list', (req, res) => {
         } catch (e) {
           return [];
         }
-      })()
+      })(),
+      image: cat.image ? `${baseUrl}/${cat.image}` : ''
     }));
 
     res.json(formatted);
   });
 });
-
 router.delete('/category-delete/:id', (req, res) => {
   const { id } = req.params;
 
