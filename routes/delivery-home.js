@@ -2,7 +2,19 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/connection');
 const authenticate = require('../middleware/auth');
+const path = require('path');
+const multer = require('multer');
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/support');
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueName + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage });
 
 
 
@@ -453,4 +465,60 @@ router.post('/delivery-partner/verify-otp', authenticate, (req, res) => {
   });
 });
 
+
+router.post('/support/create', upload.single('file'), (req, res) => {
+  const { user_id, user_type, title, description } = req.body;
+
+  if (!user_id || !user_type || !title) {
+    return res.status(400).json({ error: 'user_id, user_type, and title are required' });
+  }
+
+  const file = req.file ? req.file.filename : null;
+
+  const sql = `
+    INSERT INTO support_tickets (user_id, user_type, title, description, file)
+    VALUES (?, ?, ?, ?, ?)
+  `;
+  db.query(sql, [user_id, user_type, title, description, file], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: 'Support ticket created', ticket_id: result.insertId });
+  });
+});
+
+// 🟡 List Tickets by User
+router.get('/support/list', (req, res) => {
+  const { user_id, user_type } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads/support`;
+
+  if (!user_id || !user_type) {
+    return res.status(400).json({ error: 'user_id and user_type are required' });
+  }
+
+  const sql = `SELECT * FROM support_tickets WHERE user_id = ? AND user_type = ? ORDER BY id DESC`;
+  db.query(sql, [user_id, user_type], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const formatted = results.map(r => ({
+      ...r,
+      file: r.file ? `${baseUrl}/${r.file}` : null
+    }));
+
+    res.json({ tickets: formatted });
+  });
+});
+
+// 🔵 Update Ticket Status (Admin/Support Team)
+router.put('/support/update-status/:id', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!['open', 'in_progress', 'resolved', 'closed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  db.query(`UPDATE support_tickets SET status = ? WHERE id = ?`, [status, id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: 'Ticket status updated' });
+  });
+});
 module.exports = router;
