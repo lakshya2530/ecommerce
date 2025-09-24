@@ -5,6 +5,7 @@ const router = express.Router();
 // const { Job } = require('../models');
 // const { Event } = require('../models');
 
+
 const { Application, Like, Job, Event, sequelize } = require('../models'); // Make sure 'sequelize' is destructured
 const { Op } = require('sequelize'); // Import Sequelize operators
 
