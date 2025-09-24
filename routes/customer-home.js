@@ -1749,10 +1749,10 @@ router.post("/wallet/create-order", async (req, res) => {
 
     // 2. Insert entry in wallets table (status: pending)
     const insertSQL = `
-      INSERT INTO wallets (user_id, user_type, amount, status, razorpay_order_id)
+      INSERT INTO wallets (user_id, user_type, balance, status, razorpay_order_id)
       VALUES (?, ?, ?, 'pending', ?)
     `;
-    db.query(insertSQL, [user_id, user_type, amount, order.id], (err, result) => {
+    db.query(insertSQL, [user_id, user_type, balance, order.id], (err, result) => {
       if (err) {
         console.error("Wallet insert error:", err);
         return res.status(500).json({ success: false, error: err.message });
