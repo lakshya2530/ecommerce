@@ -294,7 +294,7 @@ router.get('/customer/shops', (req, res) => {
     });
   });
   
-  router.post('/vendor/verify-shop-access', (req, res) => {
+  router.post('/vendor/verify-shop-access',authenticate, (req, res) => {
     const { request_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
   
     const generated_signature = crypto
@@ -327,7 +327,7 @@ router.get('/customer/shops', (req, res) => {
       });
     });
   });
-  router.get('/customer/shop-details/:shop_id', (req, res) => {
+  router.get('/customer/shop-details/:shop_id',authenticate, (req, res) => {
     const { shop_id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
     const customer_id = req.user.id; // 🔑 Get customer ID from auth token/session
