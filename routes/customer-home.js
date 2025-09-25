@@ -239,38 +239,61 @@ router.get('/customer/shops', (req, res) => {
     });
   });
 
+  router.post('/vendor/shop-request/action',authenticate ,async (req, res) => {
+    const { request_id, shop_id, status } = req.body; // status = "accept" or "reject"
+    const vendor_id = req.user.id; // vendor logged in
   
-  router.post('/vendor/pay-shop-access', async (req, res) => {
-    const { shop_id, request_id } = req.body;
-  
-    const amount = 79 * 100; // Rs.79 in paise
-    const options = {
-      amount,
-      currency: 'INR',
-      receipt: `shop_access_${shop_id}_${Date.now()}`,
-      notes: { shop_id, request_id }
-    };
-  
-    try {
-      const order = await razorpay.orders.create(options);
-  
-      // Save order ID in DB for verification
-      const sql = `UPDATE shop_access_requests SET razorpay_order_id=?, status='accepted' WHERE id=?`;
-      db.query(sql, [order.id, request_id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-  
-        res.json({
-          success: true,
-          message: 'Vendor order created. Complete payment via Razorpay.',
-          order
-        });
-      });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Razorpay order creation failed' });
+    if (!["accept", "reject"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status, must be accept or reject" });
     }
+  
+    // Check request exists
+    const checkSql = `SELECT * FROM shop_access_requests WHERE id = ? AND shop_id = ?`;
+    db.query(checkSql, [request_id, shop_id], async (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!results.length) return res.status(404).json({ error: "Request not found" });
+  
+      if (status === "reject") {
+        // Just update to rejected
+        const sql = `UPDATE shop_access_requests SET status='rejected' WHERE id=?`;
+        db.query(sql, [request_id], (err2) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+          return res.json({ success: true, message: "Request rejected successfully" });
+        });
+      }
+  
+      if (status === "accept") {
+        try {
+          const amount = 79 * 100; // Rs.79 in paise
+          const options = {
+            amount,
+            currency: "INR",
+            receipt: `shop_access_${shop_id}_${Date.now()}`,
+            notes: { shop_id, request_id, vendor_id }
+          };
+  
+          const order = await razorpay.orders.create(options);
+  
+          const updateSql = `
+            UPDATE shop_access_requests 
+            SET razorpay_order_id=?, status='accepted' 
+            WHERE id=?`;
+          db.query(updateSql, [order.id, request_id], (err3) => {
+            if (err3) return res.status(500).json({ error: err3.message });
+            res.json({
+              success: true,
+              message: "Vendor accepted request. Razorpay order created.",
+              order
+            });
+          });
+        } catch (error) {
+          console.error("Razorpay Error:", error);
+          return res.status(500).json({ error: "Razorpay order creation failed" });
+        }
+      }
+    });
   });
-
+  
   router.post('/vendor/verify-shop-access', (req, res) => {
     const { request_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
   
