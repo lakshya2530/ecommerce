@@ -1682,6 +1682,46 @@ router.delete('/delete-service/:id', (req, res) => {
   });
 });
 
+// Vendor sees all shop access requests
+router.get('/vendor/shop-requests',authenticate, (req, res) => {
+  const vendor_id = req.user.id; // Assuming vendor is logged in
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  const sql = `
+    SELECT 
+      sar.id AS request_id,
+      sar.customer_id,
+      u.full_name AS customer_name,
+      u.email AS customer_email,
+      u.phone AS customer_phone,
+      sar.shop_id,
+      vs.shop_name,
+      sar.status,
+      sar.access_key,
+      sar.start_time,
+      sar.end_time,
+      sar.created_at
+    FROM shop_access_requests sar
+    JOIN users u ON sar.customer_id = u.id
+    JOIN vendor_shops vs ON sar.shop_id = vs.id
+    WHERE vs.vendor_id = ?
+    ORDER BY sar.created_at DESC
+  `;
+
+  db.query(sql, [vendor_id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const formatted = results.map(r => ({
+      ...r,
+      created_at: r.created_at ? r.created_at.toISOString() : null,
+      start_time: r.start_time ? r.start_time.toISOString() : null,
+      end_time: r.end_time ? r.end_time.toISOString() : null
+    }));
+
+    res.json({ success: true, requests: formatted });
+  });
+});
+
 
 
 module.exports = router;

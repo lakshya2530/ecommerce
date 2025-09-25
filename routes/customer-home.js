@@ -229,146 +229,129 @@ router.get('/customer/shops', (req, res) => {
       res.json(formatted);
     });
   });
+  router.post('/customer/request-shop-access', (req, res) => {
+    const { shop_id, customer_id } = req.body;
+  
+    const sql = `INSERT INTO shop_access_requests (shop_id, customer_id) VALUES (?, ?)`;
+    db.query(sql, [shop_id, customer_id], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, message: 'Request sent to vendor', request_id: result.insertId });
+    });
+  });
 
+  
+  router.post('/vendor/pay-shop-access', async (req, res) => {
+    const { shop_id, request_id } = req.body;
+  
+    const amount = 79 * 100; // Rs.79 in paise
+    const options = {
+      amount,
+      currency: 'INR',
+      receipt: `shop_access_${shop_id}_${Date.now()}`,
+      notes: { shop_id, request_id }
+    };
+  
+    try {
+      const order = await razorpay.orders.create(options);
+  
+      // Save order ID in DB for verification
+      const sql = `UPDATE shop_access_requests SET razorpay_order_id=?, status='accepted' WHERE id=?`;
+      db.query(sql, [order.id, request_id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+  
+        res.json({
+          success: true,
+          message: 'Vendor order created. Complete payment via Razorpay.',
+          order
+        });
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Razorpay order creation failed' });
+    }
+  });
+
+  router.post('/vendor/verify-shop-access', (req, res) => {
+    const { request_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+  
+    const generated_signature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpay_order_id + '|' + razorpay_payment_id)
+      .digest('hex');
+  
+    if (generated_signature !== razorpay_signature)
+      return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+  
+    // Payment verified -> Activate 2-hour access for customer
+    const startTime = new Date();
+    const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // 2 hours
+    const accessKey = crypto.randomBytes(16).toString('hex');
+  
+    const sql = `
+      UPDATE shop_access_requests 
+      SET status='paid', start_time=?, end_time=?, access_key=? 
+      WHERE id=? AND status='accepted'
+    `;
+    db.query(sql, [startTime, endTime, accessKey, request_id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      res.json({
+        success: true,
+        message: 'Payment successful. Customer can view shop for 2 hours.',
+        access_key: accessKey,
+        start_time: startTime,
+        end_time: endTime
+      });
+    });
+  });
   router.get('/customer/shop-details/:shop_id', (req, res) => {
     const { shop_id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+    const customer_id = req.user.id; // 🔑 Get customer ID from auth token/session
   
-    // Step 1: Get shop details
-    const shopSql = `
-      SELECT 
-        vs.*,
-        u.full_name AS vendor_name,
-        u.email AS vendor_email,
-        u.phone AS vendor_phone
-      FROM vendor_shops vs
-      JOIN users u ON vs.vendor_id = u.id
-      WHERE vs.id = ?
+    const accessSql = `
+      SELECT access_key, start_time, end_time
+      FROM shop_access_requests
+      WHERE shop_id=? AND customer_id=? AND status='paid'
+        AND NOW() BETWEEN start_time AND end_time
+      ORDER BY id DESC LIMIT 1
     `;
-  
-    db.query(shopSql, [shop_id], (err, shopResults) => {
+    db.query(accessSql, [shop_id, customer_id], (err, accessRows) => {
       if (err) return res.status(500).json({ error: err.message });
-      if (!shopResults.length) return res.status(404).json({ error: 'Shop not found' });
   
-      const shop = shopResults[0];
+      const hasAccess = accessRows.length > 0;
+      const accessData = hasAccess ? accessRows[0] : null;
   
-      // Format shop images
-      shop.shop_image = shop.shop_image ? `${baseUrl}/shops/${shop.shop_image}` : '';
-      shop.shop_document = shop.shop_document ? `${baseUrl}/vendor_shops/${shop.shop_document}` : '';
-      shop.additional_document = shop.additional_document ? `${baseUrl}/vendor_shops/${shop.additional_document}` : '';
-  
-      // Step 2: Get all products for this vendor
-      const productSql = `
-        SELECT 
-          p.*,
-          c.name AS category_name,
-          sc.name AS subcategory_name
-        FROM products p
-        LEFT JOIN categories c ON p.category = c.id
-        LEFT JOIN categories sc ON p.sub_category = sc.id
-        WHERE p.vendor_id = ?
-        ORDER BY p.id DESC
+      // Step 1: Fetch shop details
+      const shopSql = `
+        SELECT vs.*, u.full_name AS vendor_name
+        FROM vendor_shops vs
+        JOIN users u ON vs.vendor_id = u.id
+        WHERE vs.id = ?
       `;
-      db.query(productSql, [shop.vendor_id], (err2, productResults) => {
+      db.query(shopSql, [shop_id], (err2, shopResults) => {
         if (err2) return res.status(500).json({ error: err2.message });
+        if (!shopResults.length) return res.status(404).json({ error: 'Shop not found' });
   
-        const formattedProducts = productResults.map(p => {
-          let images = [];
-          let specifications = [];
+        const shop = shopResults[0];
+        shop.shop_image = shop.shop_image ? `${baseUrl}/shops/${shop.shop_image}` : '';
   
-          try {
-            if (p.images) {
-              const parsedImages = JSON.parse(p.images);
-              images = parsedImages.map(img => `${baseUrl}/products/${img}`);
-            }
-          } catch (e) {
-            images = [];
-          }
+        // Mask sensitive info if no access
+        // if (!hasAccess) {
+        //   shop.shop_document = null;
+        //   shop.additional_document = null;
+        //   shop.vendor_name = null;
+        //   shop.email = null;
+        //   shop.phone = null;
+        // }
   
-          try {
-            if (p.specifications) {
-              specifications = JSON.parse(p.specifications);
-            }
-          } catch (e) {
-            specifications = [];
-          }
-  
-          return {
-            ...p,
-            images,
-            specifications
-          };
-        });
-  
-        // Step 3: Get all services for this vendor
-        const serviceSql = `
-          SELECT 
-            s.id AS service_id,
-            s.service_name,
-            s.service_description,
-            s.price,
-            s.approx_time,
-            s.vendor_id,
-            s.service_type,
-            s.location,
-            s.meet_link,
-            sc.name AS subcategory_name,
-            sc.image AS subcategory_image
-          FROM services s
-          LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
-          WHERE s.vendor_id = ?
-          ORDER BY s.id DESC
-        `;
-        db.query(serviceSql, [shop.vendor_id], (err3, serviceResults) => {
-          if (err3) return res.status(500).json({ error: err3.message });
-  
-          // Step 4: Fetch slots for each service
-          const serviceIds = serviceResults.map(s => s.service_id);
-          if (serviceIds.length === 0) {
-            return res.json({
-              shop_details: shop,
-              products: formattedProducts,
-              services: []
-            });
-          }
-  
-          const slotSql = `
-            SELECT id, service_id, slot_date, slot_time
-            FROM service_slots
-            WHERE service_id IN (?)
-            ORDER BY slot_date ASC, slot_time ASC
-          `;
-          db.query(slotSql, [serviceIds], (err4, slotResults) => {
-            if (err4) return res.status(500).json({ error: err4.message });
-  
-            // Group slots by service_id
-            const slotsByService = {};
-            slotResults.forEach(slot => {
-              if (!slotsByService[slot.service_id]) {
-                slotsByService[slot.service_id] = [];
-              }
-              slotsByService[slot.service_id].push({
-                slot_id: slot.id,
-                slot_date: slot.slot_date,
-                slot_time: slot.slot_time
-              });
-            });
-  
-            const formattedServices = serviceResults.map(s => ({
-              ...s,
-              subcategory_image: s.subcategory_image
-                ? `${baseUrl}/${s.subcategory_image}`
-                : '',
-              slots: slotsByService[s.service_id] || []
-            }));
-  
-            // Step 5: Final response
-            res.json({
-              shop_details: shop,
-              products: formattedProducts,
-              services: formattedServices
-            });
-          });
+        // Response
+        res.json({
+          shop_details: shop,
+          access_granted: hasAccess,
+          access_key: accessData?.access_key || null,
+          start_time: accessData?.start_time || null,
+          end_time: accessData?.end_time || null
         });
       });
     });
@@ -421,7 +404,6 @@ router.get('/customer/shops', (req, res) => {
   //         let images = [];
   //         let specifications = [];
   
-  //         // Parse JSON fields if they exist
   //         try {
   //           if (p.images) {
   //             const parsedImages = JSON.parse(p.images);
@@ -446,25 +428,82 @@ router.get('/customer/shops', (req, res) => {
   //         };
   //       });
   
+  //       // Step 3: Get all services for this vendor
+  //       const serviceSql = `
+  //         SELECT 
+  //           s.id AS service_id,
+  //           s.service_name,
+  //           s.service_description,
+  //           s.price,
+  //           s.approx_time,
+  //           s.vendor_id,
+  //           s.service_type,
+  //           s.location,
+  //           s.meet_link,
+  //           sc.name AS subcategory_name,
+  //           sc.image AS subcategory_image
+  //         FROM services s
+  //         LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+  //         WHERE s.vendor_id = ?
+  //         ORDER BY s.id DESC
+  //       `;
+  //       db.query(serviceSql, [shop.vendor_id], (err3, serviceResults) => {
+  //         if (err3) return res.status(500).json({ error: err3.message });
   
-  //     // db.query(productSql, [shop.vendor_id], (err2, productResults) => {
-  //     //   if (err2) return res.status(500).json({ error: err2.message });
+  //         // Step 4: Fetch slots for each service
+  //         const serviceIds = serviceResults.map(s => s.service_id);
+  //         if (serviceIds.length === 0) {
+  //           return res.json({
+  //             shop_details: shop,
+  //             products: formattedProducts,
+  //             services: []
+  //           });
+  //         }
   
-  //     //   // Format product images
-  //     //   const formattedProducts = productResults.map(p => ({
-  //     //     ...p,
-  //     //     product_image: p.product_image ? `${baseUrl}/products/${p.product_image}` : ''
-  //     //   }));
+  //         const slotSql = `
+  //           SELECT id, service_id, slot_date, slot_time
+  //           FROM service_slots
+  //           WHERE service_id IN (?)
+  //           ORDER BY slot_date ASC, slot_time ASC
+  //         `;
+  //         db.query(slotSql, [serviceIds], (err4, slotResults) => {
+  //           if (err4) return res.status(500).json({ error: err4.message });
   
-  //       // Step 3: Final response
-  //       res.json({
-  //         shop_details: shop,
-  //         products: formattedProducts
+  //           // Group slots by service_id
+  //           const slotsByService = {};
+  //           slotResults.forEach(slot => {
+  //             if (!slotsByService[slot.service_id]) {
+  //               slotsByService[slot.service_id] = [];
+  //             }
+  //             slotsByService[slot.service_id].push({
+  //               slot_id: slot.id,
+  //               slot_date: slot.slot_date,
+  //               slot_time: slot.slot_time
+  //             });
+  //           });
+  
+  //           const formattedServices = serviceResults.map(s => ({
+  //             ...s,
+  //             subcategory_image: s.subcategory_image
+  //               ? `${baseUrl}/${s.subcategory_image}`
+  //               : '',
+  //             slots: slotsByService[s.service_id] || []
+  //           }));
+  
+  //           // Step 5: Final response
+  //           res.json({
+  //             shop_details: shop,
+  //             products: formattedProducts,
+  //             services: formattedServices
+  //           });
+  //         });
   //       });
   //     });
   //   });
   // });
   
+
+
 
   router.get('/customer/products', (req, res) => {
     const { category, sub_category } = req.query;
