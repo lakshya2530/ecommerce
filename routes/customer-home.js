@@ -566,6 +566,78 @@ router.get('/customer/shops', (req, res) => {
     });
   });
   
+  // ✅ GET /services
+// ✅ GET /services?subcategory_id=5
+router.get('/customer/services', (req, res) => {
+  const { subcategory_id } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  let serviceSql = `
+    SELECT 
+      s.id AS service_id,
+      s.service_name,
+      s.service_description,
+      s.price,
+      s.approx_time,
+      s.vendor_id,
+      s.service_type,
+      s.location,
+      s.meet_link,
+      sc.name AS subcategory_name,
+      sc.image AS subcategory_image
+    FROM services s
+    LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+  `;
+  const params = [];
+
+  if (subcategory_id) {
+    serviceSql += ` WHERE s.sub_category_id = ?`;
+    params.push(subcategory_id);
+  }
+
+  serviceSql += ` ORDER BY s.id DESC`;
+
+  db.query(serviceSql, params, (err, serviceResults) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const serviceIds = serviceResults.map(s => s.service_id);
+    if (!serviceIds.length) {
+      return res.json([]);
+    }
+
+    const slotSql = `
+      SELECT id, service_id, slot_date, slot_time
+      FROM service_slots
+      WHERE service_id IN (?)
+      ORDER BY slot_date ASC, slot_time ASC
+    `;
+    db.query(slotSql, [serviceIds], (err2, slotResults) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+
+      const slotsByService = {};
+      slotResults.forEach(slot => {
+        if (!slotsByService[slot.service_id]) slotsByService[slot.service_id] = [];
+        slotsByService[slot.service_id].push({
+          slot_id: slot.id,
+          slot_date: slot.slot_date,
+          slot_time: slot.slot_time
+        });
+      });
+
+      const formatted = serviceResults.map(s => ({
+        ...s,
+        subcategory_image: s.subcategory_image
+          ? `${baseUrl}/${s.subcategory_image}`
+          : '',
+        slots: slotsByService[s.service_id] || []
+      }));
+
+      res.json(formatted);
+    });
+  });
+});
+
+
   router.get('/customer/product/:id', (req, res) => {
     const { id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;

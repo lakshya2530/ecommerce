@@ -1128,7 +1128,18 @@ router.get('/vendor/my-bids', authenticate, (req, res) => {
   });
 });
 
+router.post('/vendor/save-service-categories', authenticate, (req, res) => {
+  const vendor_id = req.user.id;
+  const { category_id, subcategory_ids } = req.body; // [2,3,5]
 
+  const subIds = subcategory_ids.join(','); 
+
+  const sql = 'UPDATE users SET service_category_id = ?, service_subcategory_ids = ? WHERE id = ?';
+  db.query(sql, [category_id, subIds, vendor_id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: "Categories & Subcategories saved successfully" });
+  });
+});
 
 
   router.post('/vendor/save-categories', authenticate, (req, res) => {
@@ -1248,6 +1259,7 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
   const { 
     sub_category_id,
     service_description,
+    unit,
     price,
     approx_time,
     vendor_id,
@@ -1298,14 +1310,14 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     // 2. Insert service
     const insertQuery = `
       INSERT INTO services 
-        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery, brands, features, exclusions, previous_work, gst_applicable, gst_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery, brands, features, exclusions, previous_work, gst_applicable, gst_code,unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const values = [
       sub_category_id, service_name, service_description, price, approx_time,
       vendor_id, service_type, location, meet_link || null, JSON.stringify(gallery),
       JSON.stringify(parsedBrands), JSON.stringify(parsedFeatures), JSON.stringify(parsedExclusions),
-      JSON.stringify(parsedPreviousWork), gst_applicable, gst_code
+      JSON.stringify(parsedPreviousWork), gst_applicable, gst_code,unit
     ];
 
     db.query(insertQuery, values, (err2, result) => {
@@ -1492,6 +1504,7 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
   const {
     sub_category_id,
     service_description,
+    unit,
     price,
     approx_time,
     vendor_id,
@@ -1555,7 +1568,8 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
       exclusions: JSON.stringify(parsedExclusions),
       previous_work: JSON.stringify(parsedPreviousWork),
       gst_applicable,
-      gst_code
+      gst_code,
+      unit
     };
 
     // Remove undefined fields (gallery might be empty)
