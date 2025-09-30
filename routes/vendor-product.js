@@ -109,7 +109,7 @@ const upload = multer({ storage, limits: { files: 5 } });
 
 router.post('/product-create', authenticate, upload.array('images', 5), (req, res) => {
   const { 
-    name, description, actual_price, selling_price, quantity, type, category, sub_category, 
+    name, description, actual_price, selling_price, quantity, type, category, sub_category,unit,
     specifications, status = 'active',
     gst_applicable = 'NO', gst_code = null,
     product_condition = 'new', model_name = null, size = null, color = null, weight = null,
@@ -132,6 +132,7 @@ router.post('/product-create', authenticate, upload.array('images', 5), (req, re
     description,
     actual_price,
     selling_price,
+    unit,
     type,
     category,
     sub_category,
@@ -205,14 +206,15 @@ router.post('/bulk-product-create', authenticate, upload.array('images'), (req, 
       product.weight || null,
       product.discount_percentage || 0,
       product.return_policy || 'not_returnable',
-      product.return_policy === 'not_returnable' ? null : (product.return_days || null)
+      product.return_policy === 'not_returnable' ? null : (product.return_days || null),
+      product.unit
     ];
   });
 
   const sql = `
     INSERT INTO products 
     (vendor_id, name, description, actual_price, selling_price, type, category, sub_category, quantity, images, status, specifications,
-     gst_applicable, gst_code, product_condition, model_name, size, color, weight, discount_percentage, return_policy, return_days) 
+     gst_applicable, gst_code, product_condition, model_name, size, color, weight, discount_percentage, return_policy, return_days,unit) 
     VALUES ?
   `;
 
@@ -280,6 +282,7 @@ router.get('/product-list', authenticate, (req, res) => {
     const {
       name,
       description,
+      unit,
       actual_price,
       selling_price,
       quantity,
@@ -303,6 +306,7 @@ router.get('/product-list', authenticate, (req, res) => {
     const updatedData = {
       name,
       description,
+      unit,
       actual_price,
       selling_price,
       quantity,
