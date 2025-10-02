@@ -1744,7 +1744,7 @@ router.post("/vendor/set-final-price", authenticate, async (req, res) => {
   const { booking_id, final_price } = req.body;
 
   // Get booking + fee
-  const [rows] = await db.promise().query(`SELECT booking_fee FROM bookings WHERE id=?`, [booking_id]);
+  const [rows] = await db.promise().query(`SELECT amount FROM bookings WHERE id=?`, [booking_id]);
   if (!rows.length) return res.status(404).json({ error: "Booking not found" });
 
   const bookingFee = rows[0].booking_fee;
