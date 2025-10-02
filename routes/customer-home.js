@@ -2046,8 +2046,159 @@ router.get("/wallet/details", (req, res) => {
   });
 });
 
+router.post("/book-service-postpay", authenticate, async (req, res) => {
+  try {
+    const { service_id, slot_ids, address_id } = req.body;
+    const customer_id = req.user.id;
+
+    if (!service_id || !slot_ids?.length || !address_id) {
+      return res.status(400).json({ error: "Service ID, slot IDs and address ID required" });
+    }
+
+    // ✅ Check service and get subcategory (and platform fee)
+    const [serviceRows] = await db.promise().query(
+      `SELECT s.id, s.sub_category_id, sc.platform_fee
+       FROM services s
+       LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+       WHERE s.id=?`,
+      [service_id]
+    );
+
+    if (!serviceRows.length) return res.status(404).json({ error: "Service not found" });
+
+    const service = serviceRows[0];
+    const bookingFee = service.bid_price || 0; // use platform_fee from subcategory
+
+    if (bookingFee <= 0) {
+      return res.status(400).json({ error: "Platform fee not configured for this service" });
+    }
+
+    // ✅ Create Razorpay order for booking fee
+    const order = await razorpay.orders.create({
+      amount: bookingFee * 100,
+      currency: "INR",
+      receipt: `postpay_booking_fee_${Date.now()}`,
+      notes: { service_id, customer_id }
+    });
+
+    // ✅ Insert booking (partially paid mode)
+    const [bookingResult] = await db.promise().query(
+      `INSERT INTO bookings 
+       (customer_id, service_id, slot_id, address_id, status, razorpay_order_id, booking_fee, created_at) 
+       VALUES (?, ?, ?, ?, 'pending_fee_payment', ?, ?, NOW())`,
+      [customer_id, service_id, JSON.stringify(slot_ids), address_id, order.id, bookingFee]
+    );
+
+    const booking_id = bookingResult.insertId;
+
+    // ✅ Insert transaction for booking fee
+    await db.promise().query(
+      `INSERT INTO transactions 
+       (booking_id, customer_id, razorpay_order_id, amount, status, transaction_type) 
+       VALUES (?, ?, ?, ?, 'pending','booking_fee')`,
+      [booking_id, customer_id, order.id, bookingFee]
+    );
+
+    res.json({
+      status: true,
+      message: "Booking created. Pay booking fee to confirm.",
+      booking_id,
+      razorpay_order: order,
+      booking_fee: bookingFee,
+      status_value: "pending_fee_payment"
+    });
+
+  } catch (err) {
+    console.error("Postpay Booking Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
+router.post("/pay-remaining", authenticate, async (req, res) => {
+  const { booking_id } = req.body;
+  const customer_id = req.user.id;
+
+  const [rows] = await db.promise().query(
+    `SELECT remaining_amount FROM bookings WHERE id=? AND customer_id=? AND status='awaiting_remaining_payment'`,
+    [booking_id, customer_id]
+  );
+  if (!rows.length) return res.status(400).json({ error: "Booking not eligible for remaining payment" });
+
+  const remainingAmount = rows[0].remaining_amount;
+
+  const order = await razorpay.orders.create({
+    amount: remainingAmount * 100,
+    currency: "INR",
+    receipt: `postpay_remaining_${booking_id}`
+  });
+
+  await db.promise().query(
+    `INSERT INTO transactions (booking_id, customer_id, razorpay_order_id, amount, status, transaction_type)
+     VALUES (?, ?, ?, ?, 'pending','remaining_payment')`,
+    [booking_id, customer_id, order.id, remainingAmount]
+  );
+
+  res.json({
+    status: true,
+    message: "Pay remaining balance.",
+    razorpay_order: order,
+    booking_id,
+    remaining_amount: remainingAmount,
+    status_value: "pending_payment"
+  });
+});
+
+
+router.post("/verify-remaining-payment", authenticate, async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, booking_id } = req.body;
+    const customer_id = req.user.id;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !booking_id) {
+      return res.status(400).json({ error: "Missing payment details" });
+    }
+
+    // Generate expected signature
+    const crypto = require("crypto");
+    const generated_signature = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature !== razorpay_signature) {
+      return res.status(400).json({ error: "Payment signature mismatch" });
+    }
+
+    // Update transaction to success
+    await db.promise().query(
+      `UPDATE transactions 
+       SET status='success', razorpay_payment_id=?, razorpay_signature=? 
+       WHERE razorpay_order_id=? AND booking_id=? AND customer_id=?`,
+      [razorpay_payment_id, razorpay_signature, razorpay_order_id, booking_id, customer_id]
+    );
+
+    // Mark booking fully paid
+    await db.promise().query(
+      `UPDATE bookings 
+       SET status='paid', payment_status='completed', updated_at=NOW() 
+       WHERE id=? AND customer_id=?`,
+      [booking_id, customer_id]
+    );
+
+    res.json({
+      status: true,
+      message: "Remaining payment verified and booking marked as paid",
+      booking_id,
+      razorpay_order_id,
+      razorpay_payment_id,
+      status_value: "paid"
+    });
+
+  } catch (err) {
+    console.error("Verify Remaining Payment Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 module.exports = router;

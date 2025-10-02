@@ -1272,7 +1272,8 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     exclusions,     // array or stringified JSON
     previous_work,  // array or stringified JSON
     gst_applicable = 'NO',
-    gst_code = null
+    gst_code = null,
+    is_after_pay
   } = req.body;
 
   // Validate required fields
@@ -1310,8 +1311,8 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     // 2. Insert service
     const insertQuery = `
       INSERT INTO services 
-        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery, brands, features, exclusions, previous_work, gst_applicable, gst_code,unit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery, brands, features, exclusions, previous_work, gst_applicable, gst_code,unit,is_after_pay)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)
     `;
     const values = [
       sub_category_id, service_name, service_description, price, approx_time,
@@ -1364,6 +1365,7 @@ router.get('/services-list', (req, res) => {
       s.previous_work,
       s.gst_applicable,
       s.gst_code,
+      s.is_after_pay,
       sc.name AS subcategory_name,
       sc.image AS subcategory_image
     FROM services s
@@ -1517,7 +1519,8 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
     exclusions,
     previous_work,
     gst_applicable,
-    gst_code
+    gst_code,
+    is_after_pay
   } = req.body;
 
   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
@@ -1569,6 +1572,7 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
       previous_work: JSON.stringify(parsedPreviousWork),
       gst_applicable,
       gst_code,
+      is_after_pay,
       unit
     };
 
@@ -1736,6 +1740,32 @@ router.get('/vendor/shop-requests',authenticate, (req, res) => {
   });
 });
 
+router.post("/vendor/set-final-price", authenticateVendor, async (req, res) => {
+  const { booking_id, final_price } = req.body;
+
+  // Get booking + fee
+  const [rows] = await db.promise().query(`SELECT booking_fee FROM bookings WHERE id=?`, [booking_id]);
+  if (!rows.length) return res.status(404).json({ error: "Booking not found" });
+
+  const bookingFee = rows[0].booking_fee;
+  const remainingAmount = final_price - bookingFee;
+
+  await db.promise().query(
+    `UPDATE bookings SET amount=?, remaining_amount=?, status='awaiting_remaining_payment'
+     WHERE id=?`,
+    [final_price, remainingAmount, booking_id]
+  );
+
+  res.json({
+    status: true,
+    message: "Final price set. Customer needs to pay remaining balance.",
+    booking_id,
+    final_price,
+    booking_fee: bookingFee,
+    remaining_amount: remainingAmount,
+    status_value: "awaiting_remaining_payment"
+  });
+});
 
 
 module.exports = router;
