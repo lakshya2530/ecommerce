@@ -1747,8 +1747,8 @@ router.post("/vendor/set-final-price", authenticate, async (req, res) => {
   const [rows] = await db.promise().query(`SELECT amount FROM bookings WHERE id=?`, [booking_id]);
   if (!rows.length) return res.status(404).json({ error: "Booking not found" });
 
-  const bookingFee = rows[0].booking_fee;
-  const remainingAmount = final_price - bookingFee;
+  const bookingFee = rows[0].amount;
+  const remainingAmount = final_price - amount;
 
   await db.promise().query(
     `UPDATE bookings SET amount=?, remaining_amount=?, status='awaiting_remaining_payment'
