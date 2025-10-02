@@ -2057,7 +2057,7 @@ router.post("/book-service-postpay", authenticate, async (req, res) => {
 
     // ✅ Check service and get subcategory (and platform fee)
     const [serviceRows] = await db.promise().query(
-      `SELECT s.id, s.sub_category_id, sc.platform_fee
+      `SELECT s.id, s.sub_category_id, sc.bid_price
        FROM services s
        LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
        WHERE s.id=?`,
