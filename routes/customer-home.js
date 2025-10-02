@@ -2084,7 +2084,7 @@ router.post("/book-service-postpay", authenticate, async (req, res) => {
     // ✅ Insert booking (partially paid mode)
     const [bookingResult] = await db.promise().query(
       `INSERT INTO bookings 
-       (customer_id, service_id, slot_id, address_id, status, razorpay_order_id, booking_fee, created_at) 
+       (customer_id, service_id, slot_id, address_id, status, razorpay_order_id, amount, created_at) 
        VALUES (?, ?, ?, ?, 'pending_fee_payment', ?, ?, NOW())`,
       [customer_id, service_id, JSON.stringify(slot_ids), address_id, order.id, bookingFee]
     );
