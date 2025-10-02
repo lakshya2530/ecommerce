@@ -1740,7 +1740,7 @@ router.get('/vendor/shop-requests',authenticate, (req, res) => {
   });
 });
 
-router.post("/vendor/set-final-price", authenticateVendor, async (req, res) => {
+router.post("/vendor/set-final-price", authenticate, async (req, res) => {
   const { booking_id, final_price } = req.body;
 
   // Get booking + fee
