@@ -1668,6 +1668,7 @@ router.get('/customer/bookings', authenticate, (req, res) => {
       s.service_description,
       s.price,
       s.service_type,
+      s.is_after_pay,
       s.location,
       s.meet_link,
       ca.name AS address_name,
