@@ -583,6 +583,7 @@ router.get('/customer/services', (req, res) => {
       s.service_type,
       s.location,
       s.meet_link,
+      s.is_after_pay,
       sc.name AS subcategory_name,
       sc.image AS subcategory_image
     FROM services s
