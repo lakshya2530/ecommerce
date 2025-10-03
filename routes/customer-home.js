@@ -1792,6 +1792,29 @@ router.get('/list-addresses', authenticate, (req, res) => {
   });
 });
 
+router.delete('/delete-address/:id', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+  const { id } = req.params;
+
+  const sql = `DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?`;
+
+  db.query(sql, [id, customer_id], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        status: false, 
+        message: 'Address not found or not authorized to delete' 
+      });
+    }
+
+    res.json({
+      status: true,
+      message: 'Address deleted successfully'
+    });
+  });
+});
+
 
 router.post('/bids/:bid_id/chat', authenticate, (req, res) => {
   const sender_id = req.user.id;
