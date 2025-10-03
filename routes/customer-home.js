@@ -2148,7 +2148,7 @@ router.post("/pay-remaining", authenticate, async (req, res) => {
   const customer_id = req.user.id;
 
   const [rows] = await db.promise().query(
-    `SELECT remaining_amount FROM bookings WHERE id=? AND customer_id=? AND status='awaiting_remaining_payment'`,
+    `SELECT remaining_amount FROM bookings WHERE id=? AND customer_id=? AND is_after_pay_status='awaiting_remaining_payment'`,
     [booking_id, customer_id]
   );
   if (!rows.length) return res.status(400).json({ error: "Booking not eligible for remaining payment" });
