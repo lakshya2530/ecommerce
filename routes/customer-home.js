@@ -1662,6 +1662,9 @@ router.get('/customer/bookings', authenticate, (req, res) => {
     SELECT 
       b.id AS booking_id,
       b.status,
+      b.amount,
+      b.remaining_amount,
+      b.is_after_pay_status,
       b.created_at,
       b.slot_id, -- JSON or stringified array
       s.service_name,
