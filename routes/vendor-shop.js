@@ -275,6 +275,9 @@ router.get('/vendor/bookings', authenticate, (req, res) => {
     SELECT 
       b.id AS booking_id,
       b.status,
+      b.amount,
+      b.remaining_amount,
+      b.is_after_pay_status,
       b.cancel_reason,
       b.created_at,
       b.slot_id, -- JSON / stringified array
@@ -1751,7 +1754,7 @@ router.post("/vendor/set-final-price", authenticate, async (req, res) => {
   const remainingAmount = final_price - bookingFee;
 
   await db.promise().query(
-    `UPDATE bookings SET amount=?, remaining_amount=?, status='awaiting_remaining_payment'
+    `UPDATE bookings SET amount=?, remaining_amount=?, is_after_pay_status='awaiting_remaining_payment'
      WHERE id=?`,
     [final_price, remainingAmount, booking_id]
   );
