@@ -482,5 +482,88 @@ router.put('/customer-bank-edit/:id', verifyToken, (req, res) => {
     });
   });
   
+
+
+  // Web form registration
+
+  router.post("/register-form", async (req, res) => {
+    try {
+      const {
+        user_type, // 'vendor', 'customer', or 'delivery'
+        business_name,
+        contact_person_name,
+        name,
+        mobile_number,
+        email,
+        gstin,
+        product_category,
+        description
+      } = req.body;
+  
+      // Basic validation
+      if (!user_type || !mobile_number) {
+        return res.status(400).json({
+          status: false,
+          error: "User type and mobile number are required"
+        });
+      }
+  
+      // Insert entry
+      const [result] = await db.promise().query(
+        `INSERT INTO registrations 
+         (user_type, business_name, contact_person_name, name, mobile_number, email, gstin, product_category, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          user_type,
+          business_name || null,
+          contact_person_name || null,
+          name || null,
+          mobile_number,
+          email || null,
+          gstin || null,
+          product_category || null,
+          description || null
+        ]
+      );
+  
+      res.json({
+        status: true,
+        message: `${user_type} registration submitted successfully`,
+        registration_id: result.insertId
+      });
+    } catch (err) {
+      console.error("Registration Form Error:", err);
+      res.status(500).json({ status: false, error: err.message });
+    }
+  });
+  
+
+  router.get("/registrations", async (req, res) => {
+    try {
+      const { user_type } = req.query; // optional filter
+    
+      let sql = `SELECT * FROM registrations`;
+      const params = [];
+  
+      if (user_type) {
+        sql += ` WHERE user_type = ?`;
+        params.push(user_type);
+      }
+  
+      sql += ` ORDER BY id DESC`;
+  
+      const [rows] = await db.promise().query(sql, params);
+  
+      res.json({
+        status: true,
+        message: "Registrations fetched successfully",
+        data: rows
+      });
+    } catch (err) {
+      console.error("Fetch Registrations Error:", err);
+      res.status(500).json({ status: false, error: err.message });
+    }
+  });
+  
   
 module.exports = router;
