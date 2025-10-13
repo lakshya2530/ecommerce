@@ -1373,6 +1373,7 @@ router.get('/services-list', (req, res) => {
       s.title,
       s.service_description,
       s.price,
+      s.unit,
       s.approx_time,
       s.vendor_id,
       s.service_type,
