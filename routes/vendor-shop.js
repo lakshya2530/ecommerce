@@ -81,11 +81,14 @@ router.post(
 );
 router.post('/vendor-settings', authenticate, (req, res) => {
   const vendor_id = req.user.id; // vendor from token
-  const { min_cart_amount = 0, courier_charge = 0 } = req.body;
+  const { min_cart_amount = 0, courier_charge = 0,min_cart_amount_home = 0,courier_charge_home = 0 } = req.body;
 
   const data = {
     min_cart_amount,
-    courier_charge
+    courier_charge,
+    min_cart_amount_home,
+    courier_charge_home
+
   };
 
   const query = 'UPDATE vendor_shops SET ? WHERE vendor_id = ?';
@@ -105,7 +108,7 @@ router.get('/vendor-settings/:vendor_id', (req, res) => {
   const { vendor_id } = req.params;
 
   const query = `
-    SELECT vendor_id, min_cart_amount, courier_charge 
+    SELECT vendor_id, min_cart_amount, courier_charge ,min_cart_amount_home,courier_charge_home
     FROM vendor_shops WHERE vendor_id = ?
   `;
 
@@ -127,7 +130,7 @@ router.post(
   ]),
   (req, res) => {
     //const vendor_id = req.user.id;
-    const { gst_number, pan_number,vendor_id } = req.body;
+    const { gst_number, pan_number,vendor_id,type_of_document } = req.body;
     const files = req.files;
 
     const shop_document = files?.shop_document?.[0]?.filename || '';
@@ -150,6 +153,10 @@ router.post(
     if (shop_document) {
       updates.push('shop_document = ?');
       values.push(shop_document);
+    }
+    if(type_of_document){
+      updates.push('type_of_document = ?');
+      values.push(type_of_document);
     }
 
     if (additional_document) {
@@ -1276,7 +1283,9 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     previous_work,  // array or stringified JSON
     gst_applicable = 'NO',
     gst_code = null,
-    is_after_pay
+    is_after_pay,
+    labels,
+    title
   } = req.body;
 
   // Validate required fields
@@ -1314,14 +1323,14 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
     // 2. Insert service
     const insertQuery = `
       INSERT INTO services 
-        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery, brands, features, exclusions, previous_work, gst_applicable, gst_code,unit,is_after_pay)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)
+        (sub_category_id, service_name, service_description, price, approx_time, vendor_id, service_type, location, meet_link, gallery, brands, features, exclusions, previous_work, gst_applicable, gst_code,unit,is_after_pay,labels,title)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?)
     `;
     const values = [
       sub_category_id, service_name, service_description, price, approx_time,
       vendor_id, service_type, location, meet_link || null, JSON.stringify(gallery),
       JSON.stringify(parsedBrands), JSON.stringify(parsedFeatures), JSON.stringify(parsedExclusions),
-      JSON.stringify(parsedPreviousWork), gst_applicable, gst_code,unit,is_after_pay
+      JSON.stringify(parsedPreviousWork), gst_applicable, gst_code,unit,is_after_pay,labels
     ];
 
     db.query(insertQuery, values, (err2, result) => {
@@ -1354,6 +1363,7 @@ router.get('/services-list', (req, res) => {
     SELECT 
       s.id AS service_id,
       s.service_name,
+      s.title,
       s.service_description,
       s.price,
       s.approx_time,
@@ -1368,6 +1378,7 @@ router.get('/services-list', (req, res) => {
       s.previous_work,
       s.gst_applicable,
       s.gst_code,
+      s.labels,
       s.is_after_pay,
       sc.name AS subcategory_name,
       sc.image AS subcategory_image
@@ -1523,7 +1534,9 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
     previous_work,
     gst_applicable,
     gst_code,
-    is_after_pay
+    is_after_pay,
+    labels,
+    title
   } = req.body;
 
   if (!sub_category_id || !service_description || !price || !approx_time || !vendor_id || !service_type || !location) {
@@ -1576,7 +1589,9 @@ router.put('/update-service/:id', uploadService.array('gallery', 5), (req, res) 
       gst_applicable,
       gst_code,
       is_after_pay,
-      unit
+      unit,
+      labels,
+      title
     };
 
     // Remove undefined fields (gallery might be empty)
