@@ -1793,4 +1793,52 @@ router.post("/vendor/set-final-price", authenticate, async (req, res) => {
 });
 
 
+// Toggle service status (enable/disable)
+router.put('/toggle-service-status/:id', authenticate, (req, res) => {
+  const service_id = req.params.id;
+  const { is_active } = req.body; // 1 = enable, 0 = disable
+
+  if (is_active === undefined)
+    return res.status(400).json({ status: false, message: 'is_active is required (0 or 1)' });
+
+  const sql = 'UPDATE services SET is_active = ? WHERE id = ?';
+
+  db.query(sql, [is_active, service_id], (err, result) => {
+    if (err) return res.status(500).json({ status: false, error: err.message });
+
+    if (result.affectedRows === 0)
+      return res.status(404).json({ status: false, message: 'Service not found' });
+
+    res.json({
+      status: true,
+      message: `Service ${is_active == 1 ? 'enabled' : 'disabled'} successfully`,
+      service_id,
+      is_active
+    });
+  });
+});
+
+
+router.put('/toggle-product-status/:id', authenticate, (req, res) => {
+  const product_id = req.params.id;
+  const { is_active } = req.body;
+
+  if (is_active === undefined)
+    return res.status(400).json({ status: false, message: 'is_active is required (0 or 1)' });
+
+  const sql = 'UPDATE products SET is_active = ? WHERE id = ?';
+  db.query(sql, [is_active, product_id], (err, result) => {
+    if (err) return res.status(500).json({ status: false, error: err.message });
+    if (result.affectedRows === 0)
+      return res.status(404).json({ status: false, message: 'Product not found' });
+
+    res.json({
+      status: true,
+      message: `Product ${is_active == 1 ? 'enabled' : 'disabled'} successfully`,
+      product_id,
+      is_active
+    });
+  });
+});
+
 module.exports = router;
