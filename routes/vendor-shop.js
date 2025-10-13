@@ -130,7 +130,7 @@ router.post(
   ]),
   (req, res) => {
     //const vendor_id = req.user.id;
-    const { gst_number, pan_number,vendor_id,type_of_document } = req.body;
+    const { gst_number, pan_number,vendor_id,type_of_document,is_website_exist,website_url='' } = req.body;
     const files = req.files;
 
     const shop_document = files?.shop_document?.[0]?.filename || '';
@@ -158,7 +158,14 @@ router.post(
       updates.push('type_of_document = ?');
       values.push(type_of_document);
     }
-
+    if(website_url){
+      updates.push('website_url = ?');
+      values.push(type_owebsite_urlf_document);
+    }
+    if(is_website_exist){
+      updates.push('is_website_exist = ?');
+      values.push(is_website_exist);
+    }
     if (additional_document) {
       updates.push('additional_document = ?');
       values.push(additional_document);
