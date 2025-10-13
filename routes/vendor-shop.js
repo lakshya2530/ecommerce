@@ -160,7 +160,7 @@ router.post(
     }
     if(website_url){
       updates.push('website_url = ?');
-      values.push(type_owebsite_urlf_document);
+      values.push(website_url);
     }
     if(is_website_exist){
       updates.push('is_website_exist = ?');
