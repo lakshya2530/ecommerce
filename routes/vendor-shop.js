@@ -130,7 +130,7 @@ router.post(
   ]),
   (req, res) => {
     //const vendor_id = req.user.id;
-    const { gst_number, pan_number,vendor_id,type_of_document,is_website_exist,website_url='' } = req.body;
+    const { gst_number, pan_number,vendor_id,type_of_document,is_website_exist,is_consent_signed,website_url='' } = req.body;
     const files = req.files;
 
     const shop_document = files?.shop_document?.[0]?.filename || '';
@@ -170,6 +170,12 @@ router.post(
       updates.push('additional_document = ?');
       values.push(additional_document);
     }
+
+    if (is_consent_signed) {
+      updates.push('is_consent_signed = ?');
+      values.push(is_consent_signed);
+    }
+
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
