@@ -81,13 +81,13 @@ router.post(
 );
 router.post('/vendor-settings', authenticate, (req, res) => {
   const vendor_id = req.user.id; // vendor from token
-  const { min_cart_amount = 0, courier_charge = 0,min_cart_amount_home = 0,courier_charge_home = 0 } = req.body;
+  const { min_cart_amount = 0, courier_charge = 0,home_delivery_distance = 0,distance_start = 0 } = req.body;
 
   const data = {
     min_cart_amount,
     courier_charge,
-    min_cart_amount_home,
-    courier_charge_home
+    home_delivery_distance,
+    distance_start
 
   };
 
@@ -108,7 +108,7 @@ router.get('/vendor-settings/:vendor_id', (req, res) => {
   const { vendor_id } = req.params;
 
   const query = `
-    SELECT vendor_id, min_cart_amount, courier_charge ,min_cart_amount_home,courier_charge_home
+    SELECT vendor_id, min_cart_amount, courier_charge ,home_delivery_distance,distance_start
     FROM vendor_shops WHERE vendor_id = ?
   `;
 
