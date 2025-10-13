@@ -1337,7 +1337,7 @@ router.post('/create-service', uploadService.array('gallery', 5), (req, res) => 
       sub_category_id, service_name, service_description, price, approx_time,
       vendor_id, service_type, location, meet_link || null, JSON.stringify(gallery),
       JSON.stringify(parsedBrands), JSON.stringify(parsedFeatures), JSON.stringify(parsedExclusions),
-      JSON.stringify(parsedPreviousWork), gst_applicable, gst_code,unit,is_after_pay,labels
+      JSON.stringify(parsedPreviousWork), gst_applicable, gst_code,unit,is_after_pay,labels,title
     ];
 
     db.query(insertQuery, values, (err2, result) => {
