@@ -1371,6 +1371,7 @@ router.get('/services-list', (req, res) => {
       s.id AS service_id,
       s.service_name,
       s.title,
+      s.is_active,
       s.service_description,
       s.price,
       s.unit,
