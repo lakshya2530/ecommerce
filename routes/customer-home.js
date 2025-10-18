@@ -1129,12 +1129,80 @@ router.get('/customer/services', (req, res) => {
   // });
   
 
+  // router.get('/customer-orders', authenticate, (req, res) => {
+  //   const customer_id = req.user.id;
+  //   const now = new Date();
+  //   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+  //   const sql = `
+  //     SELECT 
+  //       o.order_number,
+  //       o.id AS order_id,
+  //       o.status AS order_status,
+  //       o.order_date,
+  //       o.product_id,
+  //       o.customer_id,
+  //       o.vendor_id,
+  //       o.assigned_to,
+  //       ot.price,
+  //       p.name AS product_name,
+  //       p.images,
+  //       p.category,
+  //       u.full_name AS vendor_name,
+  //       dp.full_name AS delivery_partner_name,
+  //       dp.phone AS delivery_partner_phone
+  //     FROM orders o
+  //     JOIN order_items ot ON o.id = ot.order_id
+  //     JOIN products p ON o.product_id = p.id
+  //     JOIN users u ON o.vendor_id = u.id
+  //     LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
+  //     WHERE o.customer_id = ?
+  //     ORDER BY o.order_date DESC
+  //   `;
+  
+  //   db.query(sql, [customer_id], (err, results) => {
+  //     if (err) return res.status(500).json({ error: err.message });
+  
+  //     const upcoming = [];
+  //     const past = [];
+  
+  //     results.forEach(order => {
+  //       const deliveryDate = new Date(order.delivery_date || order.order_date);
+  //       const images = (() => {
+  //         try {
+  //           return JSON.parse(order.images || '[]').map(
+  //             img => `${baseUrl}/products/${img}`
+  //           );
+  //         } catch (e) {
+  //           return [];
+  //         }
+  //       })();
+  
+  //       const formattedOrder = {
+  //         ...order,
+  //         images,
+  //         vendor_name: order.vendor_name,
+  //         delivery_partner_name: order.delivery_partner_name,
+  //         delivery_partner_phone: order.delivery_partner_phone
+  //       };
+  
+  //       if (deliveryDate > now) {
+  //         upcoming.push(formattedOrder);
+  //       } else {
+  //         past.push(formattedOrder);
+  //       }
+  //     });
+  
+  //     res.json({ upcoming_orders: upcoming, past_orders: past });
+  //   });
+  // });
+
   router.get('/customer-orders', authenticate, (req, res) => {
     const customer_id = req.user.id;
-    const now = new Date();
+    const { status } = req.query; // optional ?status=pending
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
   
-    const sql = `
+    let sql = `
       SELECT 
         o.order_number,
         o.id AS order_id,
@@ -1155,47 +1223,49 @@ router.get('/customer/services', (req, res) => {
       JOIN order_items ot ON o.id = ot.order_id
       JOIN products p ON o.product_id = p.id
       JOIN users u ON o.vendor_id = u.id
-      LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
+      LEFT JOIN users dp ON o.assigned_to = dp.id
       WHERE o.customer_id = ?
-      ORDER BY o.order_date DESC
     `;
   
-    db.query(sql, [customer_id], (err, results) => {
+    const params = [customer_id];
+  
+    // Apply optional status filter
+    if (status) {
+      sql += ` AND o.status = ?`;
+      params.push(status);
+    }
+  
+    sql += ` ORDER BY o.order_date DESC`;
+  
+    db.query(sql, params, (err, results) => {
       if (err) return res.status(500).json({ error: err.message });
   
-      const upcoming = [];
-      const past = [];
+      const formattedOrders = results.map(order => {
+        let images = [];
+        try {
+          const parsed = JSON.parse(order.images || '[]');
+          images = parsed.map(img => `${baseUrl}/products/${img}`);
+        } catch {
+          images = [];
+        }
   
-      results.forEach(order => {
-        const deliveryDate = new Date(order.delivery_date || order.order_date);
-        const images = (() => {
-          try {
-            return JSON.parse(order.images || '[]').map(
-              img => `${baseUrl}/products/${img}`
-            );
-          } catch (e) {
-            return [];
-          }
-        })();
-  
-        const formattedOrder = {
+        return {
           ...order,
           images,
           vendor_name: order.vendor_name,
           delivery_partner_name: order.delivery_partner_name,
           delivery_partner_phone: order.delivery_partner_phone
         };
-  
-        if (deliveryDate > now) {
-          upcoming.push(formattedOrder);
-        } else {
-          past.push(formattedOrder);
-        }
       });
   
-      res.json({ upcoming_orders: upcoming, past_orders: past });
+      res.json({
+        status: true,
+        total: formattedOrders.length,
+        orders: formattedOrders
+      });
     });
   });
+  
   
   router.get('/customer-orders/:order_id', authenticate, (req, res) => {
     const customer_id = req.user.id;

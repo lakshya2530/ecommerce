@@ -439,11 +439,48 @@ router.get('/vendor/shop', authenticate, (req, res) => {
   );
 });
 
+// router.get('/vendor-orders', authenticate, (req, res) => {
+//   const vendor_id = req.user.id;
+//   const now = new Date();
+
+//   const sql = `
+//     SELECT 
+//       o.*, 
+//       o.id AS order_id, 
+//       oi.price AS order_price, 
+//       p.name AS product_name, 
+//       c.full_name AS customer_name,
+//       dp.full_name AS delivery_partner_name,
+//       dp.phone AS delivery_partner_phone
+//     FROM orders o
+//     JOIN order_items oi ON o.id = oi.order_id
+//     JOIN products p ON o.product_id = p.id
+//     JOIN users c ON o.customer_id = c.id
+//     LEFT JOIN users dp ON o.assigned_to = dp.id  -- delivery partner
+//     WHERE p.vendor_id = ?
+//   `;
+
+//   db.query(sql, [vendor_id], (err, results) => {
+//     if (err) return res.status(500).json({ error: err.message });
+
+//     const upcoming = [];
+//     const past = [];
+
+//     results.forEach(order => {
+//       const orderDate = new Date(order.delivery_date || order.order_date);
+//       (orderDate >= now ? upcoming : past).push(order);
+//     });
+
+//     res.json({ upcoming_orders: upcoming, past_orders: past });
+//   });
+// });
+
+
 router.get('/vendor-orders', authenticate, (req, res) => {
   const vendor_id = req.user.id;
-  const now = new Date();
+  const { status } = req.query; // optional query param: ?status=pending
 
-  const sql = `
+  let sql = `
     SELECT 
       o.*, 
       o.id AS order_id, 
@@ -456,24 +493,31 @@ router.get('/vendor-orders', authenticate, (req, res) => {
     JOIN order_items oi ON o.id = oi.order_id
     JOIN products p ON o.product_id = p.id
     JOIN users c ON o.customer_id = c.id
-    LEFT JOIN users dp ON o.assigned_to = dp.id  -- delivery partner
+    LEFT JOIN users dp ON o.assigned_to = dp.id
     WHERE p.vendor_id = ?
   `;
 
-  db.query(sql, [vendor_id], (err, results) => {
+  const params = [vendor_id];
+
+  // Add optional filter by status
+  if (status) {
+    sql += ` AND o.status = ?`;
+    params.push(status);
+  }
+
+  sql += ` ORDER BY o.id DESC`;
+
+  db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    const upcoming = [];
-    const past = [];
-
-    results.forEach(order => {
-      const orderDate = new Date(order.delivery_date || order.order_date);
-      (orderDate >= now ? upcoming : past).push(order);
+    res.json({
+      status: true,
+      total: results.length,
+      orders: results
     });
-
-    res.json({ upcoming_orders: upcoming, past_orders: past });
   });
 });
+
 
 
   router.get('/vendor-orders/:order_id', authenticate, (req, res) => {
