@@ -867,17 +867,17 @@ function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
   router.post('/product-request-set/:id/bid', authenticate, (req, res) => {
     const vendor_id = req.user.id;
     const { id: request_set_id } = req.params;
-    const { price, description, delivery_time_days, additional_requirements } = req.body;
+    const { price, description, delivery_time_days, additional_requirements,type } = req.body;
   
     const sql = `
       INSERT INTO product_bids 
-      (request_set_id, vendor_id, price, description, delivery_time_days, additional_requirements) 
-      VALUES (?, ?, ?, ?, ?, ?)
+      (request_set_id, vendor_id, price, description, delivery_time_days, additional_requirements,type) 
+      VALUES (?, ?, ?, ?, ?, ?,?)
     `;
   
     db.query(
       sql,
-      [request_set_id, vendor_id, price, description, delivery_time_days, additional_requirements],
+      [request_set_id, vendor_id, price, description, delivery_time_days, additional_requirements,type],
       (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
   
@@ -1093,7 +1093,7 @@ router.get('/vendor/my-bids', authenticate, (req, res) => {
 
   const sql = `
     SELECT 
-      pb.id AS bid_id, pb.price, pb.description, pb.delivery_time_days, pb.additional_requirements,
+      pb.id AS bid_id, pb.price, pb.description, pb.delivery_time_days, pb.additional_requirements,prs.type,
       prs.id AS request_set_id, prs.request_title, prs.request_description,
       prs.min_price, prs.max_price, prs.estimated_delivery_days,
       prs.category_id, prs.subcategory_id,
