@@ -6,7 +6,12 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const verifyToken = require('../middleware/auth');
+const Razorpay = require('razorpay');
 
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 
 
 // Multer configuration directly in the same file
@@ -391,24 +396,100 @@ function isStrongPassword(password) {
     });
   });
 
-  router.post('/customer-bank-add', verifyToken, (req, res) => {
-  const user_id = req.user.id; // or req.user.vendor_id
-  const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
-
-  const sql = `INSERT INTO vendor_bank_accounts SET ?`;
-  const data = {
-    user_id,
-    account_holder_name,
-    account_number,
-    ifsc_code,
-    branch_name
-  };
-
-  db.query(sql, data, (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: 'Bank account added', id: result.insertId });
+  router.post('/customer-bank-add', verifyToken, async (req, res) => {
+    const user_id = req.user.id;
+    const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
+  
+    try {
+      // 1️⃣ Fetch vendor details for legal info
+      const [vendor] = await new Promise((resolve, reject) => {
+        db.query(`SELECT full_name, email, phone FROM users WHERE id = ?`, [user_id], (err, result) => {
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+  
+      if (!vendor) return res.status(404).json({ error: "Vendor not found" });
+  
+      // 2️⃣ Create Razorpay linked account (sub-merchant)
+      const accountPayload = {
+        name: account_holder_name,
+        email: vendor.email,
+        contact: vendor.phone,
+        type: "route",
+        business_type: "individual",
+        legal_business_name: vendor.full_name,
+        customer_facing_business_name: vendor.full_name,
+        profile: {
+          category: "services",
+          subcategory: "other_services",
+          description: "Vendor registered on platform"
+        },
+        bank_account: {
+          name: account_holder_name,
+          account_number: account_number,
+          ifsc: ifsc_code
+        }
+      };
+  
+      const razorpayAccount = await razorpay.accounts.create(accountPayload);
+  
+      // 3️⃣ Insert in local database
+      const sql = `
+        INSERT INTO vendor_bank_accounts 
+        (user_id, account_holder_name, account_number, ifsc_code, branch_name, razorpay_account_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+  
+      const values = [
+        user_id,
+        account_holder_name,
+        account_number,
+        ifsc_code,
+        branch_name,
+        razorpayAccount.id
+      ];
+  
+      db.query(sql, values, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+  
+        res.json({
+          status: true,
+          message: "Bank account added successfully & Razorpay account created",
+          bank_id: result.insertId,
+          razorpay_account_id: razorpayAccount.id
+        });
+      });
+  
+    } catch (error) {
+      console.error("Razorpay account creation error:", error);
+      res.status(500).json({
+        status: false,
+        message: "Failed to create Razorpay account",
+        error: error.error?.description || error.message
+      });
+    }
   });
-});
+  
+
+//   router.post('/customer-bank-add', verifyToken, (req, res) => {
+//   const user_id = req.user.id; // or req.user.vendor_id
+//   const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
+
+//   const sql = `INSERT INTO vendor_bank_accounts SET ?`;
+//   const data = {
+//     user_id,
+//     account_holder_name,
+//     account_number,
+//     ifsc_code,
+//     branch_name
+//   };
+
+//   db.query(sql, data, (err, result) => {
+//     if (err) return res.status(500).json({ error: err.message });
+//     res.json({ message: 'Bank account added', id: result.insertId });
+//   });
+// });
 
 
 router.put('/customer-bank-edit/:id', verifyToken, (req, res) => {
