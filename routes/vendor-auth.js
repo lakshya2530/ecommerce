@@ -750,12 +750,12 @@ router.post('/vendor-bank-add', verifyToken, async (req, res) => {
     // ✅ Store in DB
     const sql = `
       INSERT INTO vendor_bank_accounts 
-      (user_id, account_holder_name, account_number, ifsc_code, branch_name, razorpay_account_id) 
-      VALUES (?, ?, ?, ?, ?, ?)
+      (user_id, account_holder_name, account_number, ifsc_code, branch_name, razorpay_account_id,street2) 
+      VALUES (?, ?, ?, ?, ?, ?,?)
     `;
     db.query(
       sql,
-      [user_id, account_holder_name, account_number, ifsc_code, branch_name, account.id],
+      [user_id, account_holder_name, account_number, ifsc_code, branch_name, account.id,street2],
       (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
 
