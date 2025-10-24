@@ -78,35 +78,164 @@ const crypto = require("crypto");
 //   }
 // });
 
+//last one
+
+// router.get('/customer/home', async (req, res) => {
+//   try {
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+//     const search = req.query.search || null; // 🔎 search term
+
+//     // helper to safely parse JSON
+//     const safeJsonParse = (str, fallback = []) => {
+//       if (!str) return fallback;
+//       try {
+//         return JSON.parse(str);
+//       } catch (e) {
+//         return fallback;
+//       }
+//     };
+
+//     // 1. Get product categories
+//     const categories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(
+//           results.map(c => ({
+//             ...c,
+//             image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+//           }))
+//         );
+//       });
+//     });
+
+//     // 2. Get service categories
+//     const serviceCategories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results);
+//       });
+//     });
+
+//     // 3. Vendor banners (ads)
+//     const vendorBanners = await new Promise((resolve, reject) => {
+//       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(
+//           results.map(ad => ({
+//             image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+//             image_link: ad.image_link
+//           }))
+//         );
+//       });
+//     });
+
+//     // 4. Latest 10 products (with search)
+//     const productSQL = `
+//       SELECT * FROM products 
+//       WHERE status = "active" 
+//       ${search ? 'AND name LIKE ?' : ''} 
+//       ORDER BY id DESC LIMIT 10
+//     `;
+//     const productParams = search ? [`%${search}%`] : [];
+//     const products = await new Promise((resolve, reject) => {
+//       db.query(productSQL, productParams, (err, results) => {
+//         if (err) return reject(err);
+//         resolve(
+//           results.map(p => ({
+//             ...p,
+//             images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
+//             specifications: safeJsonParse(p.specifications, [])
+//           }))
+//         );
+//       });
+//     });
+
+//     // 5. Latest 10 services (with search)
+//     const serviceSQL = `
+//     SELECT * FROM services 
+//     WHERE 1=1
+//     ${search ? 'AND service_name LIKE ?' : ''} 
+//     ORDER BY id DESC LIMIT 10
+//   `;
+//     const serviceParams = search ? [`%${search}%`] : [];
+//     const services = await new Promise((resolve, reject) => {
+//       db.query(serviceSQL, serviceParams, (err, results) => {
+//         if (err) return reject(err);
+//         resolve(
+//           results.map(s => ({
+//             ...s,
+//             gallery: safeJsonParse(s.gallery, []).map(img => `${baseUrl}/services/${img}`),
+//             brands: safeJsonParse(s.brands, []),
+//             features: safeJsonParse(s.features, []),
+//             exclusions: safeJsonParse(s.exclusions, []),
+//             previous_work: safeJsonParse(s.previous_work, [])
+//           }))
+//         );
+//       });
+//     });
+
+//     // 6. Vendor shops (with search)
+//     const shopSQL = `
+//       SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document 
+//       FROM vendor_shops 
+//       WHERE 1=1 
+//       ${search ? 'AND shop_name LIKE ?' : ''} 
+//       ORDER BY id DESC LIMIT 10
+//     `;
+//     const shopParams = search ? [`%${search}%`] : [];
+//     const shops = await new Promise((resolve, reject) => {
+//       db.query(shopSQL, shopParams, (err, results) => {
+//         if (err) return reject(err);
+//         resolve(
+//           results.map(s => ({
+//             ...s,
+//             shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+//             shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+//             additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
+//           }))
+//         );
+//       });
+//     });
+
+//     // ✅ Final Response
+//     res.json({
+//       search_query: search || '',
+//       categories,
+//       service_categories: serviceCategories,
+//       vendor_banners: vendorBanners,
+//       latest_products: products,
+//       latest_services: services,
+//       shops
+//     });
+//   } catch (error) {
+//     console.error('Home page error:', error);
+//     res.status(500).json({ error: 'Server error' });
+//   }
+// });
 router.get('/customer/home', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
-    const search = req.query.search || null; // 🔎 search term
+    const search = req.query.search || null;
+    const userLat = parseFloat(req.query.latitude);
+    const userLng = parseFloat(req.query.longitude);
 
-    // helper to safely parse JSON
     const safeJsonParse = (str, fallback = []) => {
       if (!str) return fallback;
-      try {
-        return JSON.parse(str);
-      } catch (e) {
-        return fallback;
-      }
+      try { return JSON.parse(str); } catch { return fallback; }
     };
 
-    // 1. Get product categories
+    // 1️⃣ Product categories
     const categories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
-        resolve(
-          results.map(c => ({
-            ...c,
-            image: c.image ? `${baseUrl}/categories/${c.image}` : ''
-          }))
-        );
+        resolve(results.map(c => ({
+          ...c,
+          image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+        })));
       });
     });
 
-    // 2. Get service categories
+    // 2️⃣ Service categories
     const serviceCategories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
@@ -114,90 +243,125 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 3. Vendor banners (ads)
+    // 3️⃣ Vendor banners
     const vendorBanners = await new Promise((resolve, reject) => {
       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
-        resolve(
-          results.map(ad => ({
-            image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
-            image_link: ad.image_link
-          }))
-        );
+        resolve(results.map(ad => ({
+          image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+          image_link: ad.image_link
+        })));
       });
     });
 
-    // 4. Latest 10 products (with search)
+    // 4️⃣ Products (search across multiple fields + distance)
     const productSQL = `
-      SELECT * FROM products 
-      WHERE status = "active" 
-      ${search ? 'AND name LIKE ?' : ''} 
-      ORDER BY id DESC LIMIT 10
+      SELECT p.*, vs.latitude, vs.longitude 
+      FROM products p
+      LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+      WHERE p.status = 'active'
+      ${search ? `AND (
+          p.name LIKE ? OR 
+          p.description LIKE ? OR 
+          p.tags LIKE ? OR 
+          p.category LIKE ?
+      )` : ''}
+      ORDER BY p.id DESC LIMIT 10
     `;
-    const productParams = search ? [`%${search}%`] : [];
+    const productParams = search ? Array(4).fill(`%${search}%`) : [];
+
     const products = await new Promise((resolve, reject) => {
       db.query(productSQL, productParams, (err, results) => {
         if (err) return reject(err);
-        resolve(
-          results.map(p => ({
+
+        resolve(results.map(p => {
+          const distance = (userLat && userLng && p.latitude && p.longitude)
+            ? calculateDistance(userLat, userLng, p.latitude, p.longitude)
+            : null;
+
+          return {
             ...p,
             images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
-            specifications: safeJsonParse(p.specifications, [])
-          }))
-        );
+            specifications: safeJsonParse(p.specifications, []),
+            distance_in_km: distance
+          };
+        }));
       });
     });
 
-    // 5. Latest 10 services (with search)
+    // 5️⃣ Services (search across multiple fields + distance)
     const serviceSQL = `
-    SELECT * FROM services 
-    WHERE 1=1
-    ${search ? 'AND service_name LIKE ?' : ''} 
-    ORDER BY id DESC LIMIT 10
-  `;
-    const serviceParams = search ? [`%${search}%`] : [];
+      SELECT s.*, vs.latitude, vs.longitude 
+      FROM services s
+      LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+      WHERE 1=1
+      ${search ? `AND (
+        s.service_name LIKE ? OR 
+        s.service_description LIKE ? OR 
+        s.features LIKE ? OR 
+        s.brands LIKE ? OR 
+        s.labels LIKE ?
+      )` : ''}
+      ORDER BY s.id DESC LIMIT 10
+    `;
+    const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
+
     const services = await new Promise((resolve, reject) => {
       db.query(serviceSQL, serviceParams, (err, results) => {
         if (err) return reject(err);
-        resolve(
-          results.map(s => ({
+
+        resolve(results.map(s => {
+          const distance = (userLat && userLng && s.latitude && s.longitude)
+            ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+            : null;
+
+          return {
             ...s,
             gallery: safeJsonParse(s.gallery, []).map(img => `${baseUrl}/services/${img}`),
             brands: safeJsonParse(s.brands, []),
             features: safeJsonParse(s.features, []),
             exclusions: safeJsonParse(s.exclusions, []),
-            previous_work: safeJsonParse(s.previous_work, [])
-          }))
-        );
+            previous_work: safeJsonParse(s.previous_work, []),
+            distance_in_km: distance
+          };
+        }));
       });
     });
 
-    // 6. Vendor shops (with search)
+    // 6️⃣ Shops (search + distance)
     const shopSQL = `
-      SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document 
+      SELECT id, vendor_id, shop_name, shop_image, address, latitude, longitude, gst_number, pan_number, owner_name, shop_document, additional_document 
       FROM vendor_shops 
       WHERE 1=1 
-      ${search ? 'AND shop_name LIKE ?' : ''} 
+      ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
       ORDER BY id DESC LIMIT 10
     `;
-    const shopParams = search ? [`%${search}%`] : [];
+    const shopParams = search ? Array(3).fill(`%${search}%`) : [];
+
     const shops = await new Promise((resolve, reject) => {
       db.query(shopSQL, shopParams, (err, results) => {
         if (err) return reject(err);
-        resolve(
-          results.map(s => ({
+        resolve(results.map(s => {
+          const distance = (userLat && userLng && s.latitude && s.longitude)
+            ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+            : null;
+
+          return {
             ...s,
             shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
             shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
-            additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
-          }))
-        );
+            additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : '',
+            distance_in_km: distance
+          };
+        }));
       });
     });
 
     // ✅ Final Response
     res.json({
       search_query: search || '',
+      latitude: userLat,
+      longitude: userLng,
       categories,
       service_categories: serviceCategories,
       vendor_banners: vendorBanners,
@@ -205,11 +369,30 @@ router.get('/customer/home', async (req, res) => {
       latest_services: services,
       shops
     });
+
   } catch (error) {
     console.error('Home page error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+
+// 📏 Helper Function: Calculate Distance using Haversine Formula
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return parseFloat((R * c).toFixed(2)); // Distance in KM (rounded)
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI / 180);
+}
 
 
 router.get('/customer/shops', (req, res) => {
@@ -528,48 +711,191 @@ router.get('/customer/shops', (req, res) => {
 
 
 
-  router.get('/customer/products', (req, res) => {
-    const { category, sub_category } = req.query;
-    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+//   router.get('/customer/products', (req, res) => {
+//     const { category, sub_category } = req.query;
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
   
-    let sql = 'SELECT * FROM products WHERE status = "active"';
-    const values = [];
+//     let sql = 'SELECT * FROM products WHERE status = "active"';
+//     const values = [];
   
-    if (category) {
-      sql += ' AND category = ?';
-      values.push(category);
-    }
+//     if (category) {
+//       sql += ' AND category = ?';
+//       values.push(category);
+//     }
   
-    if (sub_category) {
-      sql += ' AND sub_category = ?';
-      values.push(sub_category);
-    }
+//     if (sub_category) {
+//       sql += ' AND sub_category = ?';
+//       values.push(sub_category);
+//     }
   
-    sql += ' ORDER BY id DESC';
+//     sql += ' ORDER BY id DESC';
   
-    db.query(sql, values, (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
+//     db.query(sql, values, (err, results) => {
+//       if (err) return res.status(500).json({ error: err.message });
   
-      const formatted = results.map(p => ({
+//       const formatted = results.map(p => ({
+//         ...p,
+//         images: JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`),
+//         specifications: (() => {
+//           try {
+//             return JSON.parse(p.specifications || '[]');
+//           } catch (e) {
+//             return [];
+//           }
+//         })()
+//       }));
+  
+//       res.json(formatted);
+//     });
+//   });
+  
+//   // ✅ GET /services
+// // ✅ GET /services?subcategory_id=5
+// router.get('/customer/services', (req, res) => {
+//   const { subcategory_id } = req.query;
+//   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+//   let serviceSql = `
+//     SELECT 
+//       s.id AS service_id,
+//       s.service_name,
+//       s.service_description,
+//       s.price,
+//       s.approx_time,
+//       s.vendor_id,
+//       s.service_type,
+//       s.location,
+//       s.meet_link,
+//       s.is_after_pay,
+//       sc.name AS subcategory_name,
+//       sc.image AS subcategory_image
+//     FROM services s
+//     LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+//   `;
+//   const params = [];
+
+//   if (subcategory_id) {
+//     serviceSql += ` WHERE s.sub_category_id = ?`;
+//     params.push(subcategory_id);
+//   }
+
+//   serviceSql += ` ORDER BY s.id DESC`;
+
+//   db.query(serviceSql, params, (err, serviceResults) => {
+//     if (err) return res.status(500).json({ error: err.message });
+
+//     const serviceIds = serviceResults.map(s => s.service_id);
+//     if (!serviceIds.length) {
+//       return res.json([]);
+//     }
+
+//     const slotSql = `
+//       SELECT id, service_id, slot_date, slot_time
+//       FROM service_slots
+//       WHERE service_id IN (?)
+//       ORDER BY slot_date ASC, slot_time ASC
+//     `;
+//     db.query(slotSql, [serviceIds], (err2, slotResults) => {
+//       if (err2) return res.status(500).json({ error: err2.message });
+
+//       const slotsByService = {};
+//       slotResults.forEach(slot => {
+//         if (!slotsByService[slot.service_id]) slotsByService[slot.service_id] = [];
+//         slotsByService[slot.service_id].push({
+//           slot_id: slot.id,
+//           slot_date: slot.slot_date,
+//           slot_time: slot.slot_time
+//         });
+//       });
+
+//       const formatted = serviceResults.map(s => ({
+//         ...s,
+//         subcategory_image: s.subcategory_image
+//           ? `${baseUrl}/${s.subcategory_image}`
+//           : '',
+//         slots: slotsByService[s.service_id] || []
+//       }));
+
+//       res.json(formatted);
+//     });
+//   });
+// });
+
+
+router.get('/customer/products', (req, res) => {
+  const { category, sub_category, latitude, longitude } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  let sql = `
+    SELECT p.*, vs.latitude AS shop_lat, vs.longitude AS shop_lng
+    FROM products p
+    LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+    WHERE p.status = "active"
+  `;
+  const values = [];
+
+  if (category) {
+    sql += ' AND p.category = ?';
+    values.push(category);
+  }
+
+  if (sub_category) {
+    sql += ' AND p.sub_category = ?';
+    values.push(sub_category);
+  }
+
+  sql += ' ORDER BY p.id DESC';
+
+  db.query(sql, values, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    // Haversine formula for distance
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+      const R = 6371; // km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return (R * c).toFixed(2); // km
+    };
+
+    const customerLat = parseFloat(latitude);
+    const customerLng = parseFloat(longitude);
+
+    const formatted = results.map(p => {
+      const images = JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`);
+      const specs = (() => {
+        try {
+          return JSON.parse(p.specifications || '[]');
+        } catch {
+          return [];
+        }
+      })();
+
+      const distance = (customerLat && customerLng)
+        ? calculateDistance(customerLat, customerLng, p.shop_lat, p.shop_lng)
+        : null;
+
+      return {
         ...p,
-        images: JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`),
-        specifications: (() => {
-          try {
-            return JSON.parse(p.specifications || '[]');
-          } catch (e) {
-            return [];
-          }
-        })()
-      }));
-  
-      res.json(formatted);
+        images,
+        specifications: specs,
+        distance_km: distance
+      };
     });
+
+    res.json(formatted);
   });
-  
-  // ✅ GET /services
-// ✅ GET /services?subcategory_id=5
+});
+
+
 router.get('/customer/services', (req, res) => {
-  const { subcategory_id } = req.query;
+  const { subcategory_id, latitude, longitude } = req.query;
   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
 
   let serviceSql = `
@@ -585,9 +911,12 @@ router.get('/customer/services', (req, res) => {
       s.meet_link,
       s.is_after_pay,
       sc.name AS subcategory_name,
-      sc.image AS subcategory_image
+      sc.image AS subcategory_image,
+      vs.latitude AS shop_lat,
+      vs.longitude AS shop_lng
     FROM services s
     LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+    LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
   `;
   const params = [];
 
@@ -625,13 +954,37 @@ router.get('/customer/services', (req, res) => {
         });
       });
 
-      const formatted = serviceResults.map(s => ({
-        ...s,
-        subcategory_image: s.subcategory_image
-          ? `${baseUrl}/${s.subcategory_image}`
-          : '',
-        slots: slotsByService[s.service_id] || []
-      }));
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+        const R = 6371; // km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) *
+          Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return (R * c).toFixed(2); // km
+      };
+
+      const customerLat = parseFloat(latitude);
+      const customerLng = parseFloat(longitude);
+
+      const formatted = serviceResults.map(s => {
+        const distance = (customerLat && customerLng)
+          ? calculateDistance(customerLat, customerLng, s.shop_lat, s.shop_lng)
+          : null;
+
+        return {
+          ...s,
+          subcategory_image: s.subcategory_image
+            ? `${baseUrl}/${s.subcategory_image}`
+            : '',
+          slots: slotsByService[s.service_id] || [],
+          distance_km: distance
+        };
+      });
 
       res.json(formatted);
     });
@@ -725,6 +1078,7 @@ router.get('/customer/services', (req, res) => {
 
   router.get('/cart/list', authenticate, (req, res) => {
     const customer_id = req.user.id;
+    const { latitude, longitude } = req.query; // 📍 from app side
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
   
     const sql = `
@@ -735,7 +1089,9 @@ router.get('/customer/services', (req, res) => {
         p.name, 
         p.selling_price, 
         p.images,
-        vs.shop_name
+        vs.shop_name,
+        vs.latitude AS shop_latitude,
+        vs.longitude AS shop_longitude
       FROM cart c
       JOIN products p ON c.product_id = p.id
       LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
@@ -747,10 +1103,28 @@ router.get('/customer/services', (req, res) => {
   
       let totalAmount = 0;
   
+      // Helper function for distance calculation
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+        const R = 6371; // Radius of the earth in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return parseFloat((R * c).toFixed(2)); // distance in km
+      };
+  
       const cart = results.map(item => {
         const images = (() => {
           try {
-            return JSON.parse(item.images || '[]').map(img => `${baseUrl}/products/${img}`);
+            return JSON.parse(item.images || '[]').map(
+              img => `${baseUrl}/products/${img}`
+            );
           } catch {
             return [];
           }
@@ -758,6 +1132,16 @@ router.get('/customer/services', (req, res) => {
   
         const amount = item.selling_price * item.quantity;
         totalAmount += amount;
+  
+        // 🧭 Distance calculation
+        const distance = latitude && longitude
+          ? calculateDistance(
+              parseFloat(latitude),
+              parseFloat(longitude),
+              parseFloat(item.shop_latitude),
+              parseFloat(item.shop_longitude)
+            )
+          : null;
   
         return {
           cart_id: item.cart_id,
@@ -768,25 +1152,34 @@ router.get('/customer/services', (req, res) => {
           amount,
           images,
           shop_name: item.shop_name || '',
-        //  shop_description: item.shop_description || ''
+          distance_km: distance, // 🆕 distance in kilometers
         };
       });
   
       res.json({
         cart,
-        total_amount: totalAmount
+        total_amount: totalAmount,
       });
     });
   });
   
+
   // router.get('/cart/list', authenticate, (req, res) => {
   //   const customer_id = req.user.id;
   //   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
   
   //   const sql = `
-  //     SELECT c.id as cart_id, c.quantity, p.id as product_id, p.name, p.selling_price, p.images
+  //     SELECT 
+  //       c.id AS cart_id, 
+  //       c.quantity, 
+  //       p.id AS product_id, 
+  //       p.name, 
+  //       p.selling_price, 
+  //       p.images,
+  //       vs.shop_name
   //     FROM cart c
   //     JOIN products p ON c.product_id = p.id
+  //     LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
   //     WHERE c.customer_id = ?
   //   `;
   
@@ -796,7 +1189,14 @@ router.get('/customer/services', (req, res) => {
   //     let totalAmount = 0;
   
   //     const cart = results.map(item => {
-  //       const images = JSON.parse(item.images || '[]').map(img => `${baseUrl}/products/${img}`);
+  //       const images = (() => {
+  //         try {
+  //           return JSON.parse(item.images || '[]').map(img => `${baseUrl}/products/${img}`);
+  //         } catch {
+  //           return [];
+  //         }
+  //       })();
+  
   //       const amount = item.selling_price * item.quantity;
   //       totalAmount += amount;
   
@@ -807,7 +1207,9 @@ router.get('/customer/services', (req, res) => {
   //         quantity: item.quantity,
   //         selling_price: item.selling_price,
   //         amount,
-  //         images
+  //         images,
+  //         shop_name: item.shop_name || '',
+  //       //  shop_description: item.shop_description || ''
   //       };
   //     });
   
@@ -817,7 +1219,8 @@ router.get('/customer/services', (req, res) => {
   //     });
   //   });
   // });
-
+  
+ 
   router.delete('/cart/remove/:cart_id', authenticate, (req, res) => {
     const { cart_id } = req.params;
   
