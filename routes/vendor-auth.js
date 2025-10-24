@@ -746,7 +746,7 @@ router.post('/vendor-bank-add', verifyToken, async (req, res) => {
       business_type: "individual",
       profile: {
         category: "services",
-        subcategory: "other_services",
+        subcategory: "ecommerce_marketplace",
         addresses: {
           registered: {
             street1: street1 || branch_name || "Not Provided",
