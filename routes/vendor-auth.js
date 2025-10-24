@@ -722,50 +722,66 @@ router.post('/user-verify', (req, res) => {
 
 router.post('/vendor-bank-add', verifyToken, async (req, res) => {
   const user_id = req.user.id;
-  const { account_holder_name, account_number, ifsc_code, branch_name, email, contact,street2 } = req.body;
+  const {
+    account_holder_name,
+    account_number,
+    ifsc_code,
+    branch_name,
+    email,
+    contact,
+    street1,
+    street2,
+    city,
+    state,
+    postal_code
+  } = req.body;
 
   try {
-    // ✅ Create a Route account
+    // ✅ Razorpay Route Account Create
     const account = await razorpay.accounts.create({
       email: email || `vendor${user_id}@example.com`,
       phone: contact || '9999999999',
-      type: "route", // required
+      type: "route",
       legal_business_name: account_holder_name,
-      business_type: "individual", // can be 'individual' or 'partnership'
+      business_type: "individual",
       profile: {
         category: "services",
         subcategory: "other_services",
         addresses: {
           registered: {
-            street1: branch_name || "Unknown Branch",
-            city: "Jaipur",
-            state: "Rajasthan",
-            postal_code: "302017",
+            street1: street1 || branch_name || "Not Provided",
+            street2: street2 || "N/A", // ✅ REQUIRED FIELD
+            city: city || "Jaipur",
+            state: state || "Rajasthan",
+            postal_code: postal_code || "302017",
             country: "IN"
           }
         }
       }
     });
 
-    // ✅ Store in DB
+    // ✅ Save bank + Razorpay account
     const sql = `
       INSERT INTO vendor_bank_accounts 
-      (user_id, account_holder_name, account_number, ifsc_code, branch_name, razorpay_account_id,street2) 
-      VALUES (?, ?, ?, ?, ?, ?,?)
+      (user_id, account_holder_name, account_number, ifsc_code, branch_name, razorpay_account_id) 
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
+
     db.query(
       sql,
-      [user_id, account_holder_name, account_number, ifsc_code, branch_name, account.id,street2],
+      [user_id, account_holder_name, account_number, ifsc_code, branch_name, account.id],
       (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
 
         res.json({
+          status: true,
           message: 'Vendor Razorpay account created successfully',
-          account_id: account.id,
-          id: result.insertId
+          razorpay_account_id: account.id,
+          db_id: result.insertId
         });
       }
     );
+
   } catch (error) {
     console.error('Razorpay Account Create Error:', error);
     res.status(500).json({
