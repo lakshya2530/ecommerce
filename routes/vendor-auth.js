@@ -722,7 +722,7 @@ router.post('/user-verify', (req, res) => {
 
 router.post('/vendor-bank-add', verifyToken, async (req, res) => {
   const user_id = req.user.id;
-  const { account_holder_name, account_number, ifsc_code, branch_name, email, contact } = req.body;
+  const { account_holder_name, account_number, ifsc_code, branch_name, email, contact,street2 } = req.body;
 
   try {
     // ✅ Create a Route account
