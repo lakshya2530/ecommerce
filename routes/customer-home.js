@@ -263,7 +263,6 @@ router.get('/customer/home', async (req, res) => {
       ${search ? `AND (
           p.name LIKE ? OR 
           p.description LIKE ? OR 
-          p.tags LIKE ? OR 
           p.category LIKE ?
       )` : ''}
       ORDER BY p.id DESC LIMIT 10
