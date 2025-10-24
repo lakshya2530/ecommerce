@@ -7,10 +7,14 @@ const multer = require('multer');
 const path = require('path');
 const verifyToken = require('../middleware/auth');
 const crypto = require("crypto");
+const Razorpay = require('razorpay');
 
 const saltRounds = 10;
 
-
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 // Multer configuration directly in the same file
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -697,23 +701,72 @@ router.post('/user-verify', (req, res) => {
   //   });
   // });
 
-  router.post('/vendor-bank-add', verifyToken, (req, res) => {
-  const user_id = req.user.id; // or req.user.vendor_id
+//   router.post('/vendor-bank-add', verifyToken, (req, res) => {
+//   const user_id = req.user.id; // or req.user.vendor_id
+//   const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
+
+//   const sql = `INSERT INTO vendor_bank_accounts SET ?`;
+//   const data = {
+//     user_id,
+//     account_holder_name,
+//     account_number,
+//     ifsc_code,
+//     branch_name
+//   };
+
+//   db.query(sql, data, (err, result) => {
+//     if (err) return res.status(500).json({ error: err.message });
+//     res.json({ message: 'Bank account added', id: result.insertId });
+//   });
+// });
+
+router.post('/vendor-bank-add', verifyToken, async (req, res) => {
+  const user_id = req.user.id;
   const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
 
-  const sql = `INSERT INTO vendor_bank_accounts SET ?`;
-  const data = {
-    user_id,
-    account_holder_name,
-    account_number,
-    ifsc_code,
-    branch_name
-  };
+  try {
+    // ✅ 1. Create account in Razorpay Route
+    const razorpayAccount = await razorpay.accounts.create({
+      email: req.user.email || `vendor${user_id}@example.com`,
+      phone: req.user.phone || "9999999999",
+      type: "route",
+      legal_business_name: account_holder_name,
+      business_type: "individual",
+      contact_name: account_holder_name,
+      bank_account: {
+        name: account_holder_name,
+        ifsc: ifsc_code,
+        account_number: account_number
+      }
+    });
 
-  db.query(sql, data, (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: 'Bank account added', id: result.insertId });
-  });
+    // ✅ 2. Store in DB
+    const sql = `INSERT INTO vendor_bank_accounts SET ?`;
+    const data = {
+      user_id,
+      account_holder_name,
+      account_number,
+      ifsc_code,
+      branch_name,
+      razorpay_account_id: razorpayAccount.id // store the linked Razorpay account id
+    };
+
+    db.query(sql, data, (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      res.json({
+        message: 'Bank account added successfully',
+        razorpay_account_id: razorpayAccount.id,
+        id: result.insertId
+      });
+    });
+
+  } catch (error) {
+    console.error('Razorpay error:', error);
+    res.status(500).json({
+      error: error.error?.description || error.message || 'Razorpay account creation failed'
+    });
+  }
 });
 
 
