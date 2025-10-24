@@ -745,7 +745,7 @@ router.post('/vendor-bank-add', verifyToken, async (req, res) => {
       legal_business_name: account_holder_name,
       business_type: "individual",
       profile: {
-        category: "services",
+        category: "ecommerce",
         subcategory: "ecommerce_marketplace",
         addresses: {
           registered: {
