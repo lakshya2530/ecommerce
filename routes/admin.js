@@ -472,6 +472,7 @@ router.get('/service-subcategory-list', (req, res) => {
       ss.id,
       ss.name,
       ss.image,
+      ss.bid_price,
       ss.category_id,
       sc.name AS category_name
     FROM service_subcategories ss
