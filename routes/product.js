@@ -360,13 +360,14 @@ router.get('/product-list', (req, res) => {
 
 
 router.post('/category-create', upload_c.single('image'), (req, res) => {
-  const { name, parent_id = null, labels = '' } = req.body;
+  const { name, parent_id = null, labels = '',bid_price ='' } = req.body;
 
   const category = {
     name,
     parent_id,
     labels: Array.isArray(labels) ? JSON.stringify(labels) : labels,
-    image: req.file ? req.file.filename : null
+    image: req.file ? req.file.filename : null,
+    bid_price
   };
 
   db.query('INSERT INTO categories SET ?', category, (err, result) => {
@@ -378,12 +379,13 @@ router.post('/category-create', upload_c.single('image'), (req, res) => {
 // 🟡 Update Category
 router.put('/category-update/:id', upload_c.single('image'), (req, res) => {
   const { id } = req.params;
-  const { name, parent_id = null, labels = '' } = req.body;
+  const { name, parent_id = null, labels = '',bid_price ='' } = req.body;
 
   const updatedData = {
     name,
     parent_id,
-    labels: Array.isArray(labels) ? JSON.stringify(labels) : labels
+    labels: Array.isArray(labels) ? JSON.stringify(labels) : labels,
+    bid_price
   };
 
   if (req.file) {
@@ -407,6 +409,7 @@ router.get('/category-list', (req, res) => {
       c1.parent_id,
       c1.labels,
       c1.image,
+      c1.bid_price,
       c2.name AS parent_name
     FROM categories c1
     LEFT JOIN categories c2 ON c1.parent_id = c2.id
