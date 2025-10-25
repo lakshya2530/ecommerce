@@ -504,5 +504,48 @@ router.delete('/service-subcategory-delete/:id', (req, res) => {
 });
 
 
+// ✅ GET current admin settings
+router.get("/settings", (req, res) => {
+  const sql = `SELECT masking_price, bid_price, updated_at FROM admin_settings LIMIT 1`;
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!results.length) return res.status(404).json({ message: "Settings not found" });
+
+    res.json({
+      status: true,
+      settings: results[0],
+    });
+  });
+});
+
+// ✅ UPDATE admin settings
+router.post("/settings", (req, res) => {
+  const { masking_price, bid_price } = req.body;
+
+  if (masking_price == null && bid_price == null) {
+    return res.status(400).json({ error: "At least one field (masking_price or bid_price) is required" });
+  }
+
+  const sql = `
+    UPDATE admin_settings 
+    SET 
+      masking_price = COALESCE(?, masking_price),
+      bid_price = COALESCE(?, bid_price),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = 1
+  `;
+
+  db.query(sql, [masking_price, bid_price], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json({
+      status: true,
+      message: "Admin settings updated successfully",
+      data: { masking_price, bid_price }
+    });
+  });
+});
+
+
 module.exports = router;
 
