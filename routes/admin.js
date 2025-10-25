@@ -422,7 +422,7 @@ router.post('/service-subcategory-create', upload.single('image'), (req, res) =>
   const image = req.file?.filename || '';
 
   db.query(
-    'INSERT INTO service_subcategories (category_id, name,bid_price, image) VALUES (?, ?, ?)',
+    'INSERT INTO service_subcategories (category_id, name,bid_price, image) VALUES (?, ?,?, ?)',
     [category_id, name,bid_price, image],
     (err, result) => {
       if (err) return res.status(500).json({ error: err.message });
