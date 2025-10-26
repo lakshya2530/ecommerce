@@ -28,7 +28,8 @@ const storage_c = multer.diskStorage({
     cb(null, uniqueName + path.extname(file.originalname));
   }
 });
-const upload_c = multer({ storage_c });
+const upload_c = multer({ storage: storage_c });
+
 // Create Product
 router.post('/product-create', upload.array('images', 5), (req, res) => {
   const { name, description, actual_price,selling_price,quantity,type, category,sub_category, specifications, status = 'active' } = req.body;
