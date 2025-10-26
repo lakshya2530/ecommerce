@@ -360,7 +360,7 @@ router.get('/product-list', (req, res) => {
 
 
 router.post('/category-create', upload_c.single('image'), (req, res) => {
-  const { name, parent_id = null, labels = '',bid_price ='' } = req.body;
+  const { name, parent_id = null, labels = '',bid_price = 0 } = req.body;
 
   const category = {
     name,
@@ -379,7 +379,7 @@ router.post('/category-create', upload_c.single('image'), (req, res) => {
 // 🟡 Update Category
 router.put('/category-update/:id', upload_c.single('image'), (req, res) => {
   const { id } = req.params;
-  const { name, parent_id = null, labels = '',bid_price ='' } = req.body;
+  const { name, parent_id = null, labels = '',bid_price =0 } = req.body;
 
   const updatedData = {
     name,
