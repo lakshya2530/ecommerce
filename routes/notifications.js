@@ -4,6 +4,7 @@ const { Notification, NotificationTemplate,User } = require('../models');
 const authenticateToken = require("../middleware/auth");
 
 const sendPushNotification = require("../utils/pushNotification");
+const admin = require("../config/firebase");
 
 
 router.post("/send-notification", async (req, res) => {
