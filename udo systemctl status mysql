@@ -1,0 +1,15 @@
+○ apache2.service - The Apache HTTP Server
+     Loaded: loaded (]8;;file://srv860088/usr/lib/systemd/system/apache2.service\/usr/lib/systemd/system/apache2.service]8;;\; [0;1;38:5:185mdisabled[0m; preset: [0;1;32menabled[0m)
+     Active: inactive (dead)
+       Docs: ]8;;https://httpd.apache.org/docs/2.4/\https://httpd.apache.org/docs/2.4/]8;;\
+
+Jul 16 06:52:43 srv860088 systemd[1]: apache2.service: Deactivated successfully.
+Jul 16 06:52:43 srv860088 systemd[1]: Stopped apache2.service - The Apache HTTP Server.
+Jul 16 06:52:43 srv860088 systemd[1]: Starting apache2.service - The Apache HTTP Server...
+Jul 16 06:52:43 srv860088 systemd[1]: Started apache2.service - The Apache HTTP Server.
+Jul 16 07:40:01 srv860088 systemd[1]: Stopping apache2.service - The Apache HTTP Server...
+Jul 16 07:40:01 srv860088 systemd[1]: [0;1;39m[0;1;31m[0;1;39mapache2.service: Killing process 107308 (apache2) with signal SIGKILL.[0m
+Jul 16 07:40:01 srv860088 systemd[1]: [0;1;39m[0;1;31m[0;1;39mapache2.service: Killing process 107309 (apache2) with signal SIGKILL.[0m
+Jul 16 07:40:01 srv860088 systemd[1]: [0;1;39m[0;1;31m[0;1;39mapache2.service: Killing process 107311 (apache2) with signal SIGKILL.[0m
+Jul 16 07:40:01 srv860088 systemd[1]: apache2.service: Deactivated successfully.
+Jul 16 07:40:01 srv860088 systemd[1]: Stopped apache2.service - The Apache HTTP Server.

@@ -1,0 +1,4 @@
+○ apache2.service - The Apache HTTP Server
+     Loaded: loaded (]8;;file://srv860088/usr/lib/systemd/system/apache2.service\/usr/lib/systemd/system/apache2.service]8;;\; [0;1;38:5:185mdisabled[0m; preset: [0;1;32menabled[0m)
+     Active: inactive (dead)
+       Docs: ]8;;https://httpd.apache.org/docs/2.4/\https://httpd.apache.org/docs/2.4/]8;;\

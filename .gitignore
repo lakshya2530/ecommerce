@@ -2,7 +2,11 @@ node_modules
 .env
 .DS_Store
 npm-debug.log
+<<<<<<< HEAD
+db
+=======
 db
 config/razorpay.js
 bidzord-88c4416f9619.json
 config/firebase.js
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217

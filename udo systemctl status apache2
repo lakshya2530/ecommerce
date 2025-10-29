@@ -1,0 +1,20 @@
+[0;1;32m●[0m apache2.service - The Apache HTTP Server
+     Loaded: loaded (]8;;file://srv860088/usr/lib/systemd/system/apache2.service\/usr/lib/systemd/system/apache2.service]8;;\; [0;1;38:5:185mdisabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Mon 2025-07-07 08:14:44 UTC; 4s ago
+ Invocation: 91f0e3bb1db744b3baf7096cedb47450
+       Docs: ]8;;https://httpd.apache.org/docs/2.4/\https://httpd.apache.org/docs/2.4/]8;;\
+    Process: 14895 ExecStart=/usr/sbin/apachectl start (code=exited, status=0/SUCCESS)
+   Main PID: 14898 (apache2)
+      Tasks: 6[0;38;5;245m (limit: 9477)[0m
+     Memory: 18.4M (peak: 18.8M)
+        CPU: 110ms
+     CGroup: /system.slice/apache2.service
+             ├─[0;38;5;245m14898 /usr/sbin/apache2 -k start[0m
+             ├─[0;38;5;245m14900 /usr/sbin/apache2 -k start[0m
+             ├─[0;38;5;245m14901 /usr/sbin/apache2 -k start[0m
+             ├─[0;38;5;245m14902 /usr/sbin/apache2 -k start[0m
+             ├─[0;38;5;245m14903 /usr/sbin/apache2 -k start[0m
+             └─[0;38;5;245m14904 /usr/sbin/apache2 -k start[0m
+
+Jul 07 08:14:44 srv860088 systemd[1]: Starting apache2.service - The Apache HTTP Server...
+Jul 07 08:14:44 srv860088 systemd[1]: Started apache2.service - The Apache HTTP Server.
