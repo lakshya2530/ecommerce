@@ -18,18 +18,15 @@
     "express": "^5.1.0",
     "express-http-to-https": "^1.1.4",
     "express-sslify": "^1.2.0",
-<<<<<<< HEAD
     "firebase-admin": "^13.5.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.2",
     "mysql2": "^3.14.0",
     "pdfkit": "^0.17.2",
-=======
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.2",
     "mysql2": "^3.14.0",
->>>>>>> 1582047934a7f841e936b0f5211da749f7885217
-    "pg": "^8.14.1",
+     "pg": "^8.14.1",
     "pg-hstore": "^2.3.4",
     "razorpay": "^2.9.6",
     "sequelize": "^6.37.7",
