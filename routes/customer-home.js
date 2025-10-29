@@ -1,0 +1,2744 @@
+const express = require('express');
+const router = express.Router();
+const db = require('../db/connection');
+const authenticate = require('../middleware/auth');
+const razorpay = require("../config/razorpay"); // import config
+const crypto = require("crypto");
+
+// router.get('/customer/home', async (req, res) => {
+//   try {
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+//     // 1. Get all categories with image
+//     const categories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(c => ({
+//           ...c,
+//           image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     // 2. Get vendor banners (ads)
+//     const vendorBanners = await new Promise((resolve, reject) => {
+//       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(ad => ({
+//           image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+//           image_link: ad.image_link
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     // 3. Get popular/latest products
+//     const products = await new Promise((resolve, reject) => {
+//       db.query('SELECT * FROM products WHERE status = "active" ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(p => ({
+//           ...p,
+//           images: JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`),
+//           specifications: (() => {
+//             try {
+//               return JSON.parse(p.specifications || '[]');
+//             } catch (e) {
+//               return [];
+//             }
+//           })()
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     // 4. Get vendor shop list
+//     const shops = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, vendor_id, shop_name, shop_image, address, gst_number, pan_number, owner_name, shop_document, additional_document FROM vendor_shops ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         const formatted = results.map(s => ({
+//           ...s,
+//           shop_image:s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+//           shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+//           additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
+//         }));
+//         resolve(formatted);
+//       });
+//     });
+
+//     res.json({
+//       categories,
+//       vendor_banners: vendorBanners,
+//       popular_products: products,
+//       shops
+//     });
+//   } catch (error) {
+//     console.error('Home page error:', error);
+//     res.status(500).json({ error: 'Server error' });
+//   }
+// });
+
+//last one
+
+
+
+// router.get('/customer/home', async (req, res) => {
+//   try {
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+//     const search = req.query.search || null;
+//     const userLat = parseFloat(req.query.latitude);
+//     const userLng = parseFloat(req.query.longitude);
+
+//     const safeJsonParse = (str, fallback = []) => {
+//       if (!str) return fallback;
+//       try { return JSON.parse(str); } catch { return fallback; }
+//     };
+
+//     // 1️⃣ Product categories
+//     const categories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results.map(c => ({
+//           ...c,
+//           image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+//         })));
+//       });
+//     });
+
+//     // 2️⃣ Service categories
+//     const serviceCategories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results);
+//       });
+//     });
+
+//     // 3️⃣ Vendor banners
+//     const vendorBanners = await new Promise((resolve, reject) => {
+//       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results.map(ad => ({
+//           image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+//           image_link: ad.image_link
+//         })));
+//       });
+//     });
+
+//     // 4️⃣ Products (search across multiple fields + distance)
+//     const productSQL = `
+//       SELECT p.*, vs.latitude, vs.longitude 
+//       FROM products p
+//       LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+//       WHERE p.status = 'active'
+//       ${search ? `AND (
+//           p.name LIKE ? OR 
+//           p.description LIKE ? OR 
+//           p.category LIKE ?
+//       )` : ''}
+//       ORDER BY p.id DESC LIMIT 10
+//     `;
+//     const productParams = search ? Array(4).fill(`%${search}%`) : [];
+
+//     const products = await new Promise((resolve, reject) => {
+//       db.query(productSQL, productParams, (err, results) => {
+//         if (err) return reject(err);
+
+//         resolve(results.map(p => {
+//           const distance = (userLat && userLng && p.latitude && p.longitude)
+//             ? calculateDistance(userLat, userLng, p.latitude, p.longitude)
+//             : null;
+
+//           return {
+//             ...p,
+//             images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
+//             specifications: safeJsonParse(p.specifications, []),
+//             distance_in_km: distance
+//           };
+//         }));
+//       });
+//     });
+
+//     // 5️⃣ Services (search across multiple fields + distance)
+//     const serviceSQL = `
+//       SELECT s.*, vs.latitude, vs.longitude 
+//       FROM services s
+//       LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+//       WHERE 1=1
+//       ${search ? `AND (
+//         s.service_name LIKE ? OR 
+//         s.service_description LIKE ? OR 
+//         s.features LIKE ? OR 
+//         s.brands LIKE ? OR 
+//         s.labels LIKE ?
+//       )` : ''}
+//       ORDER BY s.id DESC LIMIT 10
+//     `;
+//     const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
+
+//     const services = await new Promise((resolve, reject) => {
+//       db.query(serviceSQL, serviceParams, (err, results) => {
+//         if (err) return reject(err);
+
+//         resolve(results.map(s => {
+//           const distance = (userLat && userLng && s.latitude && s.longitude)
+//             ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+//             : null;
+
+//           return {
+//             ...s,
+//             gallery: safeJsonParse(s.gallery, []).map(img => `${baseUrl}/services/${img}`),
+//             brands: safeJsonParse(s.brands, []),
+//             features: safeJsonParse(s.features, []),
+//             exclusions: safeJsonParse(s.exclusions, []),
+//             previous_work: safeJsonParse(s.previous_work, []),
+//             distance_in_km: distance
+//           };
+//         }));
+//       });
+//     });
+
+//     // 6️⃣ Shops (search + distance)
+//     const shopSQL = `
+//       SELECT id, vendor_id, shop_name, shop_image, address, latitude, longitude, gst_number, pan_number, owner_name, shop_document, additional_document 
+//       FROM vendor_shops 
+//       WHERE 1=1 
+//       ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
+//       ORDER BY id DESC LIMIT 10
+//     `;
+//     const shopParams = search ? Array(3).fill(`%${search}%`) : [];
+
+//     const shops = await new Promise((resolve, reject) => {
+//       db.query(shopSQL, shopParams, (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results.map(s => {
+//           const distance = (userLat && userLng && s.latitude && s.longitude)
+//             ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+//             : null;
+
+//           return {
+//             ...s,
+//             shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+//             shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+//             additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : '',
+//             distance_in_km: distance
+//           };
+//         }));
+//       });
+//     });
+
+//     // ✅ Final Response
+//     res.json({
+//       search_query: search || '',
+//       latitude: userLat,
+//       longitude: userLng,
+//       categories,
+//       service_categories: serviceCategories,
+//       vendor_banners: vendorBanners,
+//       latest_products: products,
+//       latest_services: services,
+//       shops
+//     });
+
+//   } catch (error) {
+//     console.error('Home page error:', error);
+//     res.status(500).json({ error: 'Server error' });
+//   }
+// });
+
+router.get('/customer/home', async (req, res) => {
+  try {
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+    const search = req.query.search || null;
+    const userLat = parseFloat(req.query.latitude);
+    const userLng = parseFloat(req.query.longitude);
+
+    const safeJsonParse = (str, fallback = []) => {
+      if (!str) return fallback;
+      try { return JSON.parse(str); } catch { return fallback; }
+    };
+
+    // 📦 Product Categories
+    const categories = await new Promise((resolve, reject) => {
+      db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
+        if (err) return reject(err);
+        resolve(results.map(c => ({
+          ...c,
+          image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+        })));
+      });
+    });
+
+    // 🛠️ Service Categories
+    const serviceCategories = await new Promise((resolve, reject) => {
+      db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
+        if (err) return reject(err);
+        resolve(results);
+      });
+    });
+
+    // 🏷️ Vendor Banners
+    const vendorBanners = await new Promise((resolve, reject) => {
+      db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
+        if (err) return reject(err);
+        resolve(results.map(ad => ({
+          image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+          image_link: ad.image_link
+        })));
+      });
+    });
+
+    // 🛒 Products — Added new searchable fields: brand, model_name, color, specifications
+    const productSQL = `
+      SELECT p.*, vs.latitude, vs.longitude 
+      FROM products p
+      LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+      WHERE p.status = 'active'
+      ${search ? `AND (
+          p.name LIKE ? OR 
+          p.description LIKE ? OR 
+          p.category LIKE ? OR
+          p.brand LIKE ? OR
+          p.model_name LIKE ? OR
+          p.color LIKE ? OR
+          p.specifications LIKE ?
+      )` : ''}
+      ORDER BY p.id DESC LIMIT 10
+    `;
+
+    const productParams = search ? Array(7).fill(`%${search}%`) : [];
+
+    const products = await new Promise((resolve, reject) => {
+      db.query(productSQL, productParams, (err, results) => {
+        if (err) return reject(err);
+
+        resolve(results.map(p => {
+          const distance = (userLat && userLng && p.latitude && p.longitude)
+            ? calculateDistance(userLat, userLng, p.latitude, p.longitude)
+            : null;
+
+          return {
+            ...p,
+            images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
+            specifications: safeJsonParse(p.specifications, []),
+            distance_in_km: distance
+          };
+        }));
+      });
+    });
+
+    // 🧰 Services — Added new searchable fields: labels, brand, features
+    const serviceSQL = `
+      SELECT s.*, vs.latitude, vs.longitude 
+      FROM services s
+      LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+      WHERE 1=1
+      ${search ? `AND (
+        s.service_name LIKE ? OR 
+        s.service_description LIKE ? OR 
+        s.features LIKE ? OR 
+        s.brands LIKE ? OR 
+        s.labels LIKE ?
+      )` : ''}
+      ORDER BY s.id DESC LIMIT 10
+    `;
+
+    const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
+
+    const services = await new Promise((resolve, reject) => {
+      db.query(serviceSQL, serviceParams, (err, results) => {
+        if (err) return reject(err);
+
+        resolve(results.map(s => {
+          const distance = (userLat && userLng && s.latitude && s.longitude)
+            ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+            : null;
+
+          return {
+            ...s,
+            gallery: safeJsonParse(s.gallery, []).map(img => `${baseUrl}/services/${img}`),
+            brands: safeJsonParse(s.brands, []),
+            features: safeJsonParse(s.features, []),
+            exclusions: safeJsonParse(s.exclusions, []),
+            previous_work: safeJsonParse(s.previous_work, []),
+            distance_in_km: distance
+          };
+        }));
+      });
+    });
+
+    // 🏬 Shops
+    const shopSQL = `
+      SELECT id, vendor_id, shop_name, shop_image, address, latitude, longitude, gst_number, pan_number, owner_name, shop_document, additional_document 
+      FROM vendor_shops 
+      WHERE 1=1 
+      ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
+      ORDER BY id DESC LIMIT 10
+    `;
+
+    const shopParams = search ? Array(3).fill(`%${search}%`) : [];
+
+    const shops = await new Promise((resolve, reject) => {
+      db.query(shopSQL, shopParams, (err, results) => {
+        if (err) return reject(err);
+        resolve(results.map(s => {
+          const distance = (userLat && userLng && s.latitude && s.longitude)
+            ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+            : null;
+
+          return {
+            ...s,
+            shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+            shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+            additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : '',
+            distance_in_km: distance
+          };
+        }));
+      });
+    });
+
+    // ✅ Final Response
+    res.json({
+      search_query: search || '',
+      latitude: userLat,
+      longitude: userLng,
+      categories,
+      service_categories: serviceCategories,
+      vendor_banners: vendorBanners,
+      latest_products: products,
+      latest_services: services,
+      shops
+    });
+
+  } catch (error) {
+    console.error('Home page error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+// 📏 Helper Function: Calculate Distance using Haversine Formula
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return parseFloat((R * c).toFixed(2)); // Distance in KM (rounded)
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI / 180);
+}
+
+
+router.get('/customer/shops', (req, res) => {
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+    const sql = `SELECT * FROM vendor_shops ORDER BY id DESC`;
+    db.query(sql, (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      const formatted = results.map(shop => ({
+        ...shop,
+        shop_image:shop.shop_image ? `${baseUrl}/shops/${shop.shop_image}` : '',
+        shop_document: shop.shop_document ? `${baseUrl}/vendor_shops/${shop.shop_document}` : '',
+        additional_document: shop.additional_document ? `${baseUrl}/vendor_shops/${shop.additional_document}` : ''
+      }));
+  
+      res.json(formatted);
+    });
+  });
+  router.post('/customer/request-shop-access', (req, res) => {
+    const { shop_id, customer_id } = req.body;
+  
+    const sql = `INSERT INTO shop_access_requests (shop_id, customer_id) VALUES (?, ?)`;
+    db.query(sql, [shop_id, customer_id], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, message: 'Request sent to vendor', request_id: result.insertId });
+    });
+  });
+
+  router.post('/vendor/shop-request/action',authenticate ,async (req, res) => {
+    const { request_id, shop_id, status } = req.body; // status = "accept" or "reject"
+    const vendor_id = req.user.id; // vendor logged in
+  
+    if (!["accept", "reject"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status, must be accept or reject" });
+    }
+  
+    // Check request exists
+    const checkSql = `SELECT * FROM shop_access_requests WHERE id = ? AND shop_id = ?`;
+    db.query(checkSql, [request_id, shop_id], async (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!results.length) return res.status(404).json({ error: "Request not found" });
+  
+      if (status === "reject") {
+        // Just update to rejected
+        const sql = `UPDATE shop_access_requests SET status='rejected' WHERE id=?`;
+        db.query(sql, [request_id], (err2) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+          return res.json({ success: true, message: "Request rejected successfully" });
+        });
+      }
+  
+      if (status === "accept") {
+        try {
+          const amount = 79 * 100; // Rs.79 in paise
+          const options = {
+            amount,
+            currency: "INR",
+            receipt: `shop_access_${shop_id}_${Date.now()}`,
+            notes: { shop_id, request_id, vendor_id }
+          };
+  
+          const order = await razorpay.orders.create(options);
+  
+          const updateSql = `
+            UPDATE shop_access_requests 
+            SET razorpay_order_id=?, status='accepted' 
+            WHERE id=?`;
+          db.query(updateSql, [order.id, request_id], (err3) => {
+            if (err3) return res.status(500).json({ error: err3.message });
+            res.json({
+              success: true,
+              message: "Vendor accepted request. Razorpay order created.",
+              order
+            });
+          });
+        } catch (error) {
+          console.error("Razorpay Error:", error);
+          return res.status(500).json({ error: "Razorpay order creation failed" });
+        }
+      }
+    });
+  });
+  
+  router.post('/vendor/verify-shop-access',authenticate, (req, res) => {
+    const { request_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+  
+    const generated_signature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpay_order_id + '|' + razorpay_payment_id)
+      .digest('hex');
+  
+    if (generated_signature !== razorpay_signature)
+      return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+  
+    // Payment verified -> Activate 2-hour access for customer
+    const startTime = new Date();
+    const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // 2 hours
+    const accessKey = crypto.randomBytes(16).toString('hex');
+  
+    const sql = `
+      UPDATE shop_access_requests 
+      SET status='paid', start_time=?, end_time=?, access_key=? 
+      WHERE id=? AND status='accepted'
+    `;
+    db.query(sql, [startTime, endTime, accessKey, request_id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      res.json({
+        success: true,
+        message: 'Payment successful. Customer can view shop for 2 hours.',
+        access_key: accessKey,
+        start_time: startTime,
+        end_time: endTime
+      });
+    });
+  });
+  router.get('/customer/shop-details/:shop_id',authenticate, (req, res) => {
+    const { shop_id } = req.params;
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+    const customer_id = req.user.id; // 🔑 Get customer ID from auth token/session
+  
+    const accessSql = `
+      SELECT access_key, start_time, end_time
+      FROM shop_access_requests
+      WHERE shop_id=? AND customer_id=? AND status='paid'
+        AND NOW() BETWEEN start_time AND end_time
+      ORDER BY id DESC LIMIT 1
+    `;
+    db.query(accessSql, [shop_id, customer_id], (err, accessRows) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      const hasAccess = accessRows.length > 0;
+      const accessData = hasAccess ? accessRows[0] : null;
+  
+      // Step 1: Fetch shop details
+      const shopSql = `
+        SELECT vs.*, u.full_name AS vendor_name
+        FROM vendor_shops vs
+        JOIN users u ON vs.vendor_id = u.id
+        WHERE vs.id = ?
+      `;
+      db.query(shopSql, [shop_id], (err2, shopResults) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        if (!shopResults.length) return res.status(404).json({ error: 'Shop not found' });
+  
+        const shop = shopResults[0];
+        shop.shop_image = shop.shop_image ? `${baseUrl}/shops/${shop.shop_image}` : '';
+  
+        // Mask sensitive info if no access
+        // if (!hasAccess) {
+        //   shop.shop_document = null;
+        //   shop.additional_document = null;
+        //   shop.vendor_name = null;
+        //   shop.email = null;
+        //   shop.phone = null;
+        // }
+  
+        // Response
+        res.json({
+          shop_details: shop,
+          access_granted: hasAccess,
+          access_key: accessData?.access_key || null,
+          start_time: accessData?.start_time || null,
+          end_time: accessData?.end_time || null
+        });
+      });
+    });
+  });
+  
+
+  // router.get('/customer/shop-details/:shop_id', (req, res) => {
+  //   const { shop_id } = req.params;
+  //   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+  //   // Step 1: Get shop details
+  //   const shopSql = `
+  //     SELECT 
+  //       vs.*,
+  //       u.full_name AS vendor_name,
+  //       u.email AS vendor_email,
+  //       u.phone AS vendor_phone
+  //     FROM vendor_shops vs
+  //     JOIN users u ON vs.vendor_id = u.id
+  //     WHERE vs.id = ?
+  //   `;
+  
+  //   db.query(shopSql, [shop_id], (err, shopResults) => {
+  //     if (err) return res.status(500).json({ error: err.message });
+  //     if (!shopResults.length) return res.status(404).json({ error: 'Shop not found' });
+  
+  //     const shop = shopResults[0];
+  
+  //     // Format shop images
+  //     shop.shop_image = shop.shop_image ? `${baseUrl}/shops/${shop.shop_image}` : '';
+  //     shop.shop_document = shop.shop_document ? `${baseUrl}/vendor_shops/${shop.shop_document}` : '';
+  //     shop.additional_document = shop.additional_document ? `${baseUrl}/vendor_shops/${shop.additional_document}` : '';
+  
+  //     // Step 2: Get all products for this vendor
+  //     const productSql = `
+  //       SELECT 
+  //         p.*,
+  //         c.name AS category_name,
+  //         sc.name AS subcategory_name
+  //       FROM products p
+  //       LEFT JOIN categories c ON p.category = c.id
+  //       LEFT JOIN categories sc ON p.sub_category = sc.id
+  //       WHERE p.vendor_id = ?
+  //       ORDER BY p.id DESC
+  //     `;
+  //     db.query(productSql, [shop.vendor_id], (err2, productResults) => {
+  //       if (err2) return res.status(500).json({ error: err2.message });
+  
+  //       const formattedProducts = productResults.map(p => {
+  //         let images = [];
+  //         let specifications = [];
+  
+  //         try {
+  //           if (p.images) {
+  //             const parsedImages = JSON.parse(p.images);
+  //             images = parsedImages.map(img => `${baseUrl}/products/${img}`);
+  //           }
+  //         } catch (e) {
+  //           images = [];
+  //         }
+  
+  //         try {
+  //           if (p.specifications) {
+  //             specifications = JSON.parse(p.specifications);
+  //           }
+  //         } catch (e) {
+  //           specifications = [];
+  //         }
+  
+  //         return {
+  //           ...p,
+  //           images,
+  //           specifications
+  //         };
+  //       });
+  
+  //       // Step 3: Get all services for this vendor
+  //       const serviceSql = `
+  //         SELECT 
+  //           s.id AS service_id,
+  //           s.service_name,
+  //           s.service_description,
+  //           s.price,
+  //           s.approx_time,
+  //           s.vendor_id,
+  //           s.service_type,
+  //           s.location,
+  //           s.meet_link,
+  //           sc.name AS subcategory_name,
+  //           sc.image AS subcategory_image
+  //         FROM services s
+  //         LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+  //         WHERE s.vendor_id = ?
+  //         ORDER BY s.id DESC
+  //       `;
+  //       db.query(serviceSql, [shop.vendor_id], (err3, serviceResults) => {
+  //         if (err3) return res.status(500).json({ error: err3.message });
+  
+  //         // Step 4: Fetch slots for each service
+  //         const serviceIds = serviceResults.map(s => s.service_id);
+  //         if (serviceIds.length === 0) {
+  //           return res.json({
+  //             shop_details: shop,
+  //             products: formattedProducts,
+  //             services: []
+  //           });
+  //         }
+  
+  //         const slotSql = `
+  //           SELECT id, service_id, slot_date, slot_time
+  //           FROM service_slots
+  //           WHERE service_id IN (?)
+  //           ORDER BY slot_date ASC, slot_time ASC
+  //         `;
+  //         db.query(slotSql, [serviceIds], (err4, slotResults) => {
+  //           if (err4) return res.status(500).json({ error: err4.message });
+  
+  //           // Group slots by service_id
+  //           const slotsByService = {};
+  //           slotResults.forEach(slot => {
+  //             if (!slotsByService[slot.service_id]) {
+  //               slotsByService[slot.service_id] = [];
+  //             }
+  //             slotsByService[slot.service_id].push({
+  //               slot_id: slot.id,
+  //               slot_date: slot.slot_date,
+  //               slot_time: slot.slot_time
+  //             });
+  //           });
+  
+  //           const formattedServices = serviceResults.map(s => ({
+  //             ...s,
+  //             subcategory_image: s.subcategory_image
+  //               ? `${baseUrl}/${s.subcategory_image}`
+  //               : '',
+  //             slots: slotsByService[s.service_id] || []
+  //           }));
+  
+  //           // Step 5: Final response
+  //           res.json({
+  //             shop_details: shop,
+  //             products: formattedProducts,
+  //             services: formattedServices
+  //           });
+  //         });
+  //       });
+  //     });
+  //   });
+  // });
+  
+
+
+
+//   router.get('/customer/products', (req, res) => {
+//     const { category, sub_category } = req.query;
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+//     let sql = 'SELECT * FROM products WHERE status = "active"';
+//     const values = [];
+  
+//     if (category) {
+//       sql += ' AND category = ?';
+//       values.push(category);
+//     }
+  
+//     if (sub_category) {
+//       sql += ' AND sub_category = ?';
+//       values.push(sub_category);
+//     }
+  
+//     sql += ' ORDER BY id DESC';
+  
+//     db.query(sql, values, (err, results) => {
+//       if (err) return res.status(500).json({ error: err.message });
+  
+//       const formatted = results.map(p => ({
+//         ...p,
+//         images: JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`),
+//         specifications: (() => {
+//           try {
+//             return JSON.parse(p.specifications || '[]');
+//           } catch (e) {
+//             return [];
+//           }
+//         })()
+//       }));
+  
+//       res.json(formatted);
+//     });
+//   });
+  
+//   // ✅ GET /services
+// // ✅ GET /services?subcategory_id=5
+// router.get('/customer/services', (req, res) => {
+//   const { subcategory_id } = req.query;
+//   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+//   let serviceSql = `
+//     SELECT 
+//       s.id AS service_id,
+//       s.service_name,
+//       s.service_description,
+//       s.price,
+//       s.approx_time,
+//       s.vendor_id,
+//       s.service_type,
+//       s.location,
+//       s.meet_link,
+//       s.is_after_pay,
+//       sc.name AS subcategory_name,
+//       sc.image AS subcategory_image
+//     FROM services s
+//     LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+//   `;
+//   const params = [];
+
+//   if (subcategory_id) {
+//     serviceSql += ` WHERE s.sub_category_id = ?`;
+//     params.push(subcategory_id);
+//   }
+
+//   serviceSql += ` ORDER BY s.id DESC`;
+
+//   db.query(serviceSql, params, (err, serviceResults) => {
+//     if (err) return res.status(500).json({ error: err.message });
+
+//     const serviceIds = serviceResults.map(s => s.service_id);
+//     if (!serviceIds.length) {
+//       return res.json([]);
+//     }
+
+//     const slotSql = `
+//       SELECT id, service_id, slot_date, slot_time
+//       FROM service_slots
+//       WHERE service_id IN (?)
+//       ORDER BY slot_date ASC, slot_time ASC
+//     `;
+//     db.query(slotSql, [serviceIds], (err2, slotResults) => {
+//       if (err2) return res.status(500).json({ error: err2.message });
+
+//       const slotsByService = {};
+//       slotResults.forEach(slot => {
+//         if (!slotsByService[slot.service_id]) slotsByService[slot.service_id] = [];
+//         slotsByService[slot.service_id].push({
+//           slot_id: slot.id,
+//           slot_date: slot.slot_date,
+//           slot_time: slot.slot_time
+//         });
+//       });
+
+//       const formatted = serviceResults.map(s => ({
+//         ...s,
+//         subcategory_image: s.subcategory_image
+//           ? `${baseUrl}/${s.subcategory_image}`
+//           : '',
+//         slots: slotsByService[s.service_id] || []
+//       }));
+
+//       res.json(formatted);
+//     });
+//   });
+// });
+
+
+router.get('/customer/products', (req, res) => {
+  const { category, sub_category, latitude, longitude } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  let sql = `
+    SELECT p.*, vs.latitude AS shop_lat, vs.longitude AS shop_lng
+    FROM products p
+    LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+    WHERE p.status = "active"
+  `;
+  const values = [];
+
+  if (category) {
+    sql += ' AND p.category = ?';
+    values.push(category);
+  }
+
+  if (sub_category) {
+    sql += ' AND p.sub_category = ?';
+    values.push(sub_category);
+  }
+
+  sql += ' ORDER BY p.id DESC';
+
+  db.query(sql, values, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    // Haversine formula for distance
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+      const R = 6371; // km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return (R * c).toFixed(2); // km
+    };
+
+    const customerLat = parseFloat(latitude);
+    const customerLng = parseFloat(longitude);
+
+    const formatted = results.map(p => {
+      const images = JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`);
+      const specs = (() => {
+        try {
+          return JSON.parse(p.specifications || '[]');
+        } catch {
+          return [];
+        }
+      })();
+
+      const distance = (customerLat && customerLng)
+        ? calculateDistance(customerLat, customerLng, p.shop_lat, p.shop_lng)
+        : null;
+
+      return {
+        ...p,
+        images,
+        specifications: specs,
+        distance_km: distance
+      };
+    });
+
+    res.json(formatted);
+  });
+});
+
+
+router.get('/customer/services', (req, res) => {
+  const { subcategory_id, latitude, longitude } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  let serviceSql = `
+    SELECT 
+      s.id AS service_id,
+      s.service_name,
+      s.service_description,
+      s.price,
+      s.approx_time,
+      s.vendor_id,
+      s.service_type,
+      s.location,
+      s.meet_link,
+      s.is_after_pay,
+      sc.name AS subcategory_name,
+      sc.image AS subcategory_image,
+      vs.latitude AS shop_lat,
+      vs.longitude AS shop_lng
+    FROM services s
+    LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+    LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+  `;
+  const params = [];
+
+  if (subcategory_id) {
+    serviceSql += ` WHERE s.sub_category_id = ?`;
+    params.push(subcategory_id);
+  }
+
+  serviceSql += ` ORDER BY s.id DESC`;
+
+  db.query(serviceSql, params, (err, serviceResults) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const serviceIds = serviceResults.map(s => s.service_id);
+    if (!serviceIds.length) {
+      return res.json([]);
+    }
+
+    const slotSql = `
+      SELECT id, service_id, slot_date, slot_time
+      FROM service_slots
+      WHERE service_id IN (?)
+      ORDER BY slot_date ASC, slot_time ASC
+    `;
+    db.query(slotSql, [serviceIds], (err2, slotResults) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+
+      const slotsByService = {};
+      slotResults.forEach(slot => {
+        if (!slotsByService[slot.service_id]) slotsByService[slot.service_id] = [];
+        slotsByService[slot.service_id].push({
+          slot_id: slot.id,
+          slot_date: slot.slot_date,
+          slot_time: slot.slot_time
+        });
+      });
+
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+        const R = 6371; // km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) *
+          Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return (R * c).toFixed(2); // km
+      };
+
+      const customerLat = parseFloat(latitude);
+      const customerLng = parseFloat(longitude);
+
+      const formatted = serviceResults.map(s => {
+        const distance = (customerLat && customerLng)
+          ? calculateDistance(customerLat, customerLng, s.shop_lat, s.shop_lng)
+          : null;
+
+        return {
+          ...s,
+          subcategory_image: s.subcategory_image
+            ? `${baseUrl}/${s.subcategory_image}`
+            : '',
+          slots: slotsByService[s.service_id] || [],
+          distance_km: distance
+        };
+      });
+
+      res.json(formatted);
+    });
+  });
+});
+
+
+  router.get('/customer/product/:id', (req, res) => {
+    const { id } = req.params;
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+    const sql = `
+      SELECT 
+        p.*,
+        c.name AS category_name,
+        sc.name AS subcategory_name,
+        vs.id AS shop_id,
+        vs.shop_name,
+        vs.shop_image,
+        vs.address,
+        vs.city,
+        vs.state,
+        vs.pincode,
+        u.full_name AS vendor_name,
+        u.phone AS vendor_phone
+      FROM products p
+      LEFT JOIN categories c ON p.category = c.id
+      LEFT JOIN categories sc ON p.sub_category = sc.id
+      LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+      LEFT JOIN users u ON p.vendor_id = u.id
+      WHERE p.id = ?
+    `;
+  
+    db.query(sql, [id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!results.length) return res.status(404).json({ error: 'Product not found' });
+  
+      const p = results[0];
+  
+      let images = [];
+      let specifications = [];
+  
+      try {
+        images = JSON.parse(p.images || '[]').map(img => `${baseUrl}/products/${img}`);
+      } catch (e) {
+        images = [];
+      }
+  
+      try {
+        specifications = JSON.parse(p.specifications || '[]');
+      } catch (e) {
+        specifications = [];
+      }
+  
+      const productDetail = {
+        ...p,
+        images,
+        specifications,
+        shop_image: p.shop_image ? `${baseUrl}/shops/${p.shop_image}` : ''
+      };
+  
+      res.json(productDetail);
+    });
+  });
+  
+  
+  router.post('/cart/add', authenticate, (req, res) => {
+    const customer_id = req.user.id;
+    const { product_id, quantity } = req.body;
+  
+    const sql = `INSERT INTO cart (customer_id, product_id, quantity) VALUES (?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE quantity = quantity + ?`;
+  
+    db.query(sql, [customer_id, product_id, quantity, quantity], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Product added/updated in cart' });
+    });
+  });
+  
+
+  router.patch('/cart/update', authenticate, (req, res) => {
+    const customer_id = req.user.id;
+    const { product_id, quantity } = req.body;
+  
+    const sql = `UPDATE cart SET quantity = ? WHERE customer_id = ? AND product_id = ?`;
+    db.query(sql, [quantity, customer_id, product_id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Cart updated' });
+    });
+  });
+
+  router.get('/cart/list', authenticate, (req, res) => {
+    const customer_id = req.user.id;
+    const { latitude, longitude } = req.query; // 📍 from app side
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+    const sql = `
+      SELECT 
+        c.id AS cart_id, 
+        c.quantity, 
+        p.id AS product_id, 
+        p.name, 
+        p.selling_price, 
+        p.images,
+        vs.shop_name,
+        vs.latitude AS shop_latitude,
+        vs.longitude AS shop_longitude
+      FROM cart c
+      JOIN products p ON c.product_id = p.id
+      LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+      WHERE c.customer_id = ?
+    `;
+  
+    db.query(sql, [customer_id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      let totalAmount = 0;
+  
+      // Helper function for distance calculation
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+        const R = 6371; // Radius of the earth in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return parseFloat((R * c).toFixed(2)); // distance in km
+      };
+  
+      const cart = results.map(item => {
+        const images = (() => {
+          try {
+            return JSON.parse(item.images || '[]').map(
+              img => `${baseUrl}/products/${img}`
+            );
+          } catch {
+            return [];
+          }
+        })();
+  
+        const amount = item.selling_price * item.quantity;
+        totalAmount += amount;
+  
+        // 🧭 Distance calculation
+        const distance = latitude && longitude
+          ? calculateDistance(
+              parseFloat(latitude),
+              parseFloat(longitude),
+              parseFloat(item.shop_latitude),
+              parseFloat(item.shop_longitude)
+            )
+          : null;
+  
+        return {
+          cart_id: item.cart_id,
+          product_id: item.product_id,
+          name: item.name,
+          quantity: item.quantity,
+          selling_price: item.selling_price,
+          amount,
+          images,
+          shop_name: item.shop_name || '',
+          distance_km: distance, // 🆕 distance in kilometers
+        };
+      });
+  
+      res.json({
+        cart,
+        total_amount: totalAmount,
+      });
+    });
+  });
+  
+
+  // router.get('/cart/list', authenticate, (req, res) => {
+  //   const customer_id = req.user.id;
+  //   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+  //   const sql = `
+  //     SELECT 
+  //       c.id AS cart_id, 
+  //       c.quantity, 
+  //       p.id AS product_id, 
+  //       p.name, 
+  //       p.selling_price, 
+  //       p.images,
+  //       vs.shop_name
+  //     FROM cart c
+  //     JOIN products p ON c.product_id = p.id
+  //     LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+  //     WHERE c.customer_id = ?
+  //   `;
+  
+  //   db.query(sql, [customer_id], (err, results) => {
+  //     if (err) return res.status(500).json({ error: err.message });
+  
+  //     let totalAmount = 0;
+  
+  //     const cart = results.map(item => {
+  //       const images = (() => {
+  //         try {
+  //           return JSON.parse(item.images || '[]').map(img => `${baseUrl}/products/${img}`);
+  //         } catch {
+  //           return [];
+  //         }
+  //       })();
+  
+  //       const amount = item.selling_price * item.quantity;
+  //       totalAmount += amount;
+  
+  //       return {
+  //         cart_id: item.cart_id,
+  //         product_id: item.product_id,
+  //         name: item.name,
+  //         quantity: item.quantity,
+  //         selling_price: item.selling_price,
+  //         amount,
+  //         images,
+  //         shop_name: item.shop_name || '',
+  //       //  shop_description: item.shop_description || ''
+  //       };
+  //     });
+  
+  //     res.json({
+  //       cart,
+  //       total_amount: totalAmount
+  //     });
+  //   });
+  // });
+  
+ 
+  router.delete('/cart/remove/:cart_id', authenticate, (req, res) => {
+    const { cart_id } = req.params;
+  
+    db.query('DELETE FROM cart WHERE id = ?', [cart_id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Item removed from cart' });
+    });
+  });
+
+  router.post('/place-order', authenticate, (req, res) => {
+    const customer_id = req.user.id;
+    const { address_id } = req.body;
+  
+    if (!address_id) {
+      return res.status(400).json({ error: "Address ID is required" });
+    }
+  
+    // Step A: Get Address
+    const addrSQL = `SELECT * FROM customer_addresses WHERE id = ? AND customer_id = ?`;
+    db.query(addrSQL, [address_id, customer_id], (addrErr, addrRows) => {
+      if (addrErr) return res.status(500).json({ error: addrErr.message });
+      if (addrRows.length === 0) return res.status(404).json({ error: "Address not found" });
+  
+      const address = addrRows[0];
+  
+      // Step B: Fetch Cart
+      db.query(
+        `SELECT c.*, p.name, p.selling_price, p.vendor_id 
+         FROM cart c 
+         JOIN products p ON c.product_id = p.id 
+         WHERE c.customer_id = ?`, 
+        [customer_id],
+        (err, cartItems) => {
+          if (err) return res.status(500).json({ error: err.message });
+          if (cartItems.length === 0) return res.status(400).json({ error: 'Cart is empty' });
+  
+          // Step 1: Calculate total
+          const totalAmount = cartItems.reduce((sum, item) => sum + (item.selling_price * (item.quantity || 1)), 0);
+  
+          // Step 2: Create Razorpay order
+          const options = {
+            amount: totalAmount * 100, // paise
+            currency: "INR",
+            receipt: `order_${Date.now()}`
+          };
+  
+          razorpay.orders.create(options, (err2, razorpayOrder) => {
+            if (err2) return res.status(500).json({ error: 'Razorpay order creation failed', details: err2 });
+  
+            // Step 3: Insert into orders table (pending_payment)
+            const order_number = 'ORD' + Date.now();
+            const firstItem = cartItems[0];
+  
+            const orderData = {
+              order_number,
+              customer_id,
+              status: 'pending_payment',
+              order_date: new Date(),
+              product_id: firstItem.product_id,
+              vendor_id: firstItem.vendor_id,
+              razorpay_order_id: razorpayOrder.id,
+              amount: totalAmount,
+  
+              // ✅ save address details
+              address_id: address.id,
+              customer_name: address.name,
+              customer_phone: address.phone,
+              customer_address: address.address,
+              customer_city: address.city,
+              customer_state: address.state,
+              customer_pincode: address.pincode,
+              customer_latitude: address.latitude,
+              customer_longitude: address.longitude
+            };
+  
+            db.query('INSERT INTO orders SET ?', orderData, (err3, result) => {
+              if (err3) return res.status(500).json({ error: err3.message });
+  
+              const order_id = result.insertId;
+  
+              // Step 4: Insert order items
+              const items = cartItems.map(item => ([
+                order_id,
+                item.product_id,
+                item.vendor_id,
+                item.quantity || 1,
+                item.selling_price
+              ]));
+  
+              db.query(
+                `INSERT INTO order_items (order_id, product_id, vendor_id, quantity, price) VALUES ?`,
+                [items],
+                (err4) => {
+                  if (err4) return res.status(500).json({ error: err4.message });
+  
+                  // Step 5: Insert transaction
+                  const txnSql = `
+                    INSERT INTO transactions (order_id, customer_id, razorpay_order_id, amount, status, transaction_type)
+                    VALUES (?, ?, ?, ?, 'pending','order')
+                  `;
+                  db.query(txnSql, [order_id, customer_id, razorpayOrder.id, totalAmount]);
+  
+                  // Step 6: Clear cart
+                  db.query('DELETE FROM cart WHERE customer_id = ?', [customer_id]);
+  
+                  // Step 7: Send response
+                  res.json({
+                    status: true,
+                    message: 'Razorpay order created. Proceed with payment.',
+                    order_id,
+                    order_number,
+                    razorpay_order: razorpayOrder,
+                    total_amount: totalAmount,
+                    status_value: 'pending_payment'
+                  });
+                }
+              );
+            });
+          });
+        }
+      );
+    });
+  });
+  
+  // router.post('/place-order', authenticate, (req, res) => {
+  //   const customer_id = req.user.id;
+  
+  //   db.query(
+  //     `SELECT c.*, p.name, p.selling_price, p.vendor_id 
+  //      FROM cart c 
+  //      JOIN products p ON c.product_id = p.id 
+  //      WHERE c.customer_id = ?`, 
+  //     [customer_id],
+  //     (err, cartItems) => {
+  //       if (err) return res.status(500).json({ error: err.message });
+  //       if (cartItems.length === 0) return res.status(400).json({ error: 'Cart is empty' });
+  
+  //       // Step 1: Calculate total
+  //       const totalAmount = cartItems.reduce((sum, item) => sum + (item.selling_price * (item.quantity || 1)), 0);
+  
+  //       // Step 2: Create Razorpay order
+  //       const options = {
+  //         amount: totalAmount * 100, // paise
+  //         currency: "INR",
+  //         receipt: `order_${Date.now()}`
+  //       };
+  
+  //       razorpay.orders.create(options, (err2, razorpayOrder) => {
+  //         if (err2) return res.status(500).json({ error: 'Razorpay order creation failed', details: err2 });
+  
+  //         // Step 3: Insert into orders table (pending_payment)
+  //         const order_number = 'ORD' + Date.now();
+  //         const firstItem = cartItems[0];
+  
+  //         const orderData = {
+  //           order_number,
+  //           customer_id,
+  //           status: 'pending_payment',   // 👈 not placed yet
+  //           order_date: new Date(),
+  //           product_id: firstItem.product_id,
+  //           vendor_id: firstItem.vendor_id,
+  //           razorpay_order_id: razorpayOrder.id,
+  //           amount: totalAmount
+  //         };
+  
+  //         db.query('INSERT INTO orders SET ?', orderData, (err3, result) => {
+  //           if (err3) return res.status(500).json({ error: err3.message });
+  
+  //           const order_id = result.insertId;
+  
+  //           // Step 4: Insert order items
+  //           const items = cartItems.map(item => ([
+  //             order_id,
+  //             item.product_id,
+  //             item.vendor_id,
+  //             item.quantity || 1,
+  //             item.selling_price
+  //           ]));
+  
+  //           db.query(
+  //             `INSERT INTO order_items (order_id, product_id, vendor_id, quantity, price) VALUES ?`,
+  //             [items],
+  //             (err4) => {
+  //               if (err4) return res.status(500).json({ error: err4.message });
+  
+  //               // Step 5: Insert transaction
+  //               const txnSql = `
+  //                 INSERT INTO transactions (order_id, customer_id, razorpay_order_id, amount, status, transaction_type)
+  //                 VALUES (?, ?, ?, ?, 'pending','order')
+  //               `;
+  //               db.query(txnSql, [order_id, customer_id, razorpayOrder.id, totalAmount]);
+  
+  //               // Step 6: Clear cart
+  //               db.query('DELETE FROM cart WHERE customer_id = ?', [customer_id]);
+  
+  //               // Step 7: Send response
+  //               res.json({
+  //                 status: true,
+  //                 message: 'Razorpay order created. Proceed with payment.',
+  //                 order_id,
+  //                 order_number,
+  //                 razorpay_order: razorpayOrder,
+  //                 total_amount: totalAmount,
+  //                 status_value: 'pending_payment'
+  //               });
+  //             }
+  //           );
+  //         });
+  //       });
+  //     }
+  //   );
+  // });
+
+
+  router.post("/verify-order-payment", authenticate, (req, res) => {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, order_id } = req.body;
+    const customer_id = req.user.id;
+  
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !order_id) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+  
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest("hex");
+  
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: "Invalid payment signature" });
+    }
+  
+    // Update order + transaction
+    const updateOrder = `
+      UPDATE orders 
+      SET status = 'placed', razorpay_payment_id = ?, razorpay_signature = ?
+      WHERE id = ? AND customer_id = ?
+    `;
+    db.query(updateOrder, [razorpay_payment_id, razorpay_signature, order_id, customer_id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      const updateTxn = `
+        UPDATE transactions 
+        SET razorpay_payment_id = ?, razorpay_signature = ?, status = 'success'
+        WHERE order_id = ? AND customer_id = ?
+      `;
+      db.query(updateTxn, [razorpay_payment_id, razorpay_signature, order_id, customer_id]);
+  
+      res.json({
+        status: true,
+        message: "Order payment verified successfully",
+        order_id,
+        razorpay_payment_id,
+        status_value: "placed"
+      });
+    });
+  });
+  
+  
+  // router.post('/place-order', authenticate, (req, res) => {
+  //   const customer_id = req.user.id;
+  
+  //   db.query(
+  //     `SELECT c.*, p.name, p.selling_price, p.vendor_id 
+  //      FROM cart c 
+  //      JOIN products p ON c.product_id = p.id 
+  //      WHERE c.customer_id = ?`, [customer_id],
+  //     (err, cartItems) => {
+  //       if (err) return res.status(500).json({ error: err.message });
+  //       if (cartItems.length === 0) return res.status(400).json({ error: 'Cart is empty' });
+  
+  //       const order_number = 'ORD' + Date.now();
+  //       const firstItem = cartItems[0];
+  //       const orderData = {
+  //         order_number,
+  //         customer_id,
+  //         status: 'placed',
+  //         order_date: new Date(),
+  //         product_id: firstItem.product_id,  // new field
+  //         vendor_id: firstItem.vendor_id 
+  //       };
+  
+  //       db.query('INSERT INTO orders SET ?', orderData, (err, result) => {
+  //         if (err) return res.status(500).json({ error: err.message });
+  
+  //         const order_id = result.insertId;
+  
+  //         const items = cartItems.map(item => ([
+  //           order_id,
+  //           item.product_id,
+  //           item.vendor_id,
+  //           item.quantity || 1,
+  //           item.selling_price
+  //         ]));
+  
+  //         db.query(
+  //           `INSERT INTO order_items (order_id, product_id, vendor_id, quantity, price) VALUES ?`,
+  //           [items],
+  //           (err) => {
+  //             if (err) return res.status(500).json({ error: err.message });
+  
+  //             db.query('DELETE FROM cart WHERE customer_id = ?', [customer_id]);
+  //             res.json({ message: 'Order placed', order_number, total_items: cartItems.length });
+  //           }
+  //         );
+  //       });
+  //     }
+  //   );
+  // });
+  
+
+  // router.get('/customer-orders', authenticate, (req, res) => {
+  //   const customer_id = req.user.id;
+  //   const now = new Date();
+  //   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+  //   const sql = `
+  //     SELECT 
+  //       o.order_number,
+  //       o.id AS order_id,
+  //       o.status AS order_status,
+  //       o.order_date,
+  //       o.product_id,
+  //       o.customer_id,
+  //       o.vendor_id,
+  //       o.assigned_to,
+  //       ot.price,
+  //       p.name AS product_name,
+  //       p.images,
+  //       p.category,
+  //       u.full_name AS vendor_name,
+  //       dp.full_name AS delivery_partner_name,
+  //       dp.phone AS delivery_partner_phone
+  //     FROM orders o
+  //     JOIN order_items ot ON o.id = ot.order_id
+  //     JOIN products p ON o.product_id = p.id
+  //     JOIN users u ON o.vendor_id = u.id
+  //     LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
+  //     WHERE o.customer_id = ?
+  //     ORDER BY o.order_date DESC
+  //   `;
+  
+  //   db.query(sql, [customer_id], (err, results) => {
+  //     if (err) return res.status(500).json({ error: err.message });
+  
+  //     const upcoming = [];
+  //     const past = [];
+  
+  //     results.forEach(order => {
+  //       const deliveryDate = new Date(order.delivery_date || order.order_date);
+  //       const images = (() => {
+  //         try {
+  //           return JSON.parse(order.images || '[]').map(
+  //             img => `${baseUrl}/products/${img}`
+  //           );
+  //         } catch (e) {
+  //           return [];
+  //         }
+  //       })();
+  
+  //       const formattedOrder = {
+  //         ...order,
+  //         images,
+  //         vendor_name: order.vendor_name,
+  //         delivery_partner_name: order.delivery_partner_name,
+  //         delivery_partner_phone: order.delivery_partner_phone
+  //       };
+  
+  //       if (deliveryDate > now) {
+  //         upcoming.push(formattedOrder);
+  //       } else {
+  //         past.push(formattedOrder);
+  //       }
+  //     });
+  
+  //     res.json({ upcoming_orders: upcoming, past_orders: past });
+  //   });
+  // });
+
+  router.get('/customer-orders', authenticate, (req, res) => {
+    const customer_id = req.user.id;
+    const { status } = req.query; // optional ?status=pending
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+    let sql = `
+      SELECT 
+        o.order_number,
+        o.id AS order_id,
+        o.status AS order_status,
+        o.order_date,
+        o.product_id,
+        o.customer_id,
+        o.vendor_id,
+        o.assigned_to,
+        ot.price,
+        p.name AS product_name,
+        p.images,
+        p.category,
+        u.full_name AS vendor_name,
+        dp.full_name AS delivery_partner_name,
+        dp.phone AS delivery_partner_phone
+      FROM orders o
+      JOIN order_items ot ON o.id = ot.order_id
+      JOIN products p ON o.product_id = p.id
+      JOIN users u ON o.vendor_id = u.id
+      LEFT JOIN users dp ON o.assigned_to = dp.id
+      WHERE o.customer_id = ?
+    `;
+  
+    const params = [customer_id];
+  
+    // Apply optional status filter
+    if (status) {
+      sql += ` AND o.status = ?`;
+      params.push(status);
+    }
+  
+    sql += ` ORDER BY o.order_date DESC`;
+  
+    db.query(sql, params, (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+  
+      const formattedOrders = results.map(order => {
+        let images = [];
+        try {
+          const parsed = JSON.parse(order.images || '[]');
+          images = parsed.map(img => `${baseUrl}/products/${img}`);
+        } catch {
+          images = [];
+        }
+  
+        return {
+          ...order,
+          images,
+          vendor_name: order.vendor_name,
+          delivery_partner_name: order.delivery_partner_name,
+          delivery_partner_phone: order.delivery_partner_phone
+        };
+      });
+  
+      res.json({
+        status: true,
+        total: formattedOrders.length,
+        orders: formattedOrders
+      });
+    });
+  });
+  
+  
+  router.get('/customer-orders/:order_id', authenticate, (req, res) => {
+    const customer_id = req.user.id;
+    const { order_id } = req.params;
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+  
+    const sql = `
+      SELECT 
+        o.order_number, o.id AS order_id, o.status AS order_status, 
+        o.order_date, o.customer_id, o.vendor_id, o.assigned_to, 
+        oi.price, oi.quantity,
+        p.name AS product_name, p.description AS product_description,
+        p.images, p.category, 
+        u.full_name AS vendor_name, u.phone AS vendor_mobile
+      FROM orders o
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      JOIN users u ON o.vendor_id = u.id
+      WHERE o.id = ? AND o.customer_id = ?
+    `;
+  
+    db.query(sql, [order_id, customer_id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!results.length) return res.status(404).json({ error: "Order not found" });
+  
+      // format images
+      const orderItems = results.map(item => {
+        const images = (() => {
+          try {
+            return JSON.parse(item.images || '[]').map(
+              img => `${baseUrl}/products/${img}`
+            );
+          } catch {
+            return [];
+          }
+        })();
+  
+        return {
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_description: item.product_description,
+          price: item.price,
+          quantity: item.quantity,
+          category: item.category,
+          images
+        };
+      });
+  
+      // single order response
+      const orderDetail = {
+        order_id: results[0].order_id,
+        order_number: results[0].order_number,
+        status: results[0].order_status,
+        order_date: results[0].order_date,
+        vendor: {
+          vendor_id: results[0].vendor_id,
+          vendor_name: results[0].vendor_name,
+          vendor_mobile: results[0].vendor_mobile
+        },
+        items: orderItems
+      };
+  
+      res.json(orderDetail);
+    });
+  });
+  
+
+  // GET /categories
+router.get('/home/categories', (req, res) => {
+  db.query('SELECT * FROM categories WHERE parent_id IS NULL', (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    // Parse JSON labels
+    const formatted = results.map(cat => ({
+      ...cat,
+      labels: (() => {
+        try {
+          return JSON.parse(cat.labels || '[]');
+        } catch (e) {
+          return [];
+        }
+      })()
+    }));
+
+    res.json(formatted);
+  });
+});
+
+// GET /sub-categories/:parentId
+router.get('/home/sub-categories/:parentId', (req, res) => {
+  const { parentId } = req.params;
+
+  db.query('SELECT * FROM categories WHERE parent_id = ?', [parentId], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const formatted = results.map(cat => ({
+      ...cat,
+      labels: (() => {
+        try {
+          return JSON.parse(cat.labels || '[]');
+        } catch (e) {
+          return [];
+        }
+      })()
+    }));
+
+    res.json(formatted);
+  });
+});
+
+
+router.post('/product-request-create', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+  const {
+    request_title,
+    request_description,
+    min_price,
+    max_price,
+    category_id,
+    subcategory_id,
+    type,
+    estimated_delivery_days,
+    sub_bid_price,
+    products // array of {product_title, product_description, images[]}
+  } = req.body;
+
+  db.query(
+    `INSERT INTO product_request_sets (customer_id, request_title, request_description, min_price, max_price,category_id,subcategory_id, estimated_delivery_days,sub_bid_price,type) 
+     VALUES (?, ?, ? ,?, ?, ?, ?, ?, ?,?)`,
+    [customer_id, request_title, request_description, min_price, max_price,category_id,subcategory_id, estimated_delivery_days,sub_bid_price,type],
+    (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const request_set_id = result.insertId;
+
+      if (products && products.length > 0) {
+        const items = products.map(p => [
+          request_set_id,
+          p.product_title,
+          p.product_description,
+          JSON.stringify(p.images || [])
+        ]);
+        db.query(
+          `INSERT INTO product_request_items (request_set_id, product_title, product_description, images) VALUES ?`,
+          [items]
+        );
+      }
+
+      res.json({ message: "Product request set created", request_set_id });
+    }
+  );
+});
+
+router.get('/product-request-set/:id/bids', authenticate, (req, res) => {
+  const { id: request_set_id } = req.params;
+
+  db.query(
+    `SELECT pb.*, u.full_name AS vendor_name 
+     FROM product_bids pb
+     JOIN users u ON pb.vendor_id = u.id
+     WHERE pb.request_set_id = ? 
+     ORDER BY pb.price ASC`,
+    [request_set_id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    }
+  );
+});
+
+
+router.post('/product-request-set/:id/bid/:bid_id/status', authenticate, (req, res) => {
+  const { id: request_set_id, bid_id } = req.params;
+  const { status } = req.body; // accepted or rejected
+
+  if (!['accepted', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+
+  db.query(`UPDATE product_bids SET status = ? WHERE id = ? AND request_set_id = ?`,
+    [status, bid_id, request_set_id],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      if (status === "accepted") {
+        db.query(`UPDATE product_request_sets SET status = 'in_progress' WHERE id = ?`, [request_set_id]);
+      }
+
+      res.json({ message: `Bid ${status}` });
+    });
+});
+
+
+router.get('/my-product-request-sets', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+
+  const sql = `
+    SELECT prs.*, 
+      (SELECT COUNT(*) FROM product_bids pb WHERE pb.request_set_id = prs.id) AS total_bids
+    FROM product_request_sets prs
+    WHERE prs.customer_id = ?
+    ORDER BY prs.created_at DESC
+  `;
+
+  db.query(sql, [customer_id], (err, sets) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!sets.length) return res.json([]);
+
+    const setIds = sets.map(s => s.id);
+
+    db.query(
+      `SELECT * FROM product_request_items WHERE request_set_id IN (?)`,
+      [setIds],
+      (err, items) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const grouped = sets.map(set => ({
+          ...set,
+          products: items
+            .filter(i => i.request_set_id === set.id)
+            .map(i => ({
+              ...i,
+              images: (() => {
+                try {
+                  if (!i.images) return [];
+                  let imgs = i.images;
+
+                  // Convert Buffer → string
+                  if (Buffer.isBuffer(imgs)) imgs = imgs.toString();
+
+                  // If string, parse JSON
+                  if (typeof imgs === "string") {
+                    imgs = JSON.parse(imgs);
+                  }
+
+                  // Ensure it's an array
+                  return Array.isArray(imgs) ? imgs : [];
+                } catch (e) {
+                  console.error("Image parse error:", e, i.images);
+                  return [];
+                }
+              })()
+            }))
+        }));
+
+        res.json(grouped);
+      }
+    );
+  });
+});
+
+// router.post('/book-service', authenticate, (req, res) => {
+//   const { service_id, slot_ids, address_id } = req.body;
+//   const customer_id = req.user.id;
+
+//   if (!service_id || !slot_ids || !Array.isArray(slot_ids) || slot_ids.length === 0 || !address_id) {
+//     return res.status(400).json({ error: 'Service ID, slot IDs array, and address ID are required' });
+//   }
+
+//   // Step 1: Verify service exists
+//   const serviceCheck = `SELECT id FROM services WHERE id = ?`;
+//   db.query(serviceCheck, [service_id], (err, serviceResults) => {
+//     if (err) return res.status(500).json({ error: err.message });
+//     if (serviceResults.length === 0) {
+//       return res.status(404).json({ error: 'Service not found' });
+//     }
+
+//     // Step 2: Check if slots are already booked
+//     const bookingCheck = `
+//       SELECT * FROM bookings 
+//       WHERE JSON_OVERLAPS(slot_id, CAST(? AS JSON))
+//         AND service_id = ?
+//         AND status != "cancelled"
+//     `;
+//     db.query(bookingCheck, [JSON.stringify(slot_ids), service_id], (err2, booked) => {
+//       if (err2) return res.status(500).json({ error: err2.message });
+//       if (booked.length > 0) {
+//         return res.status(400).json({ error: 'One or more slots already booked' });
+//       }
+
+//       // Step 3: Insert one booking row
+//       const insertBooking = `
+//         INSERT INTO bookings (customer_id, service_id, slot_id, address_id, status)
+//         VALUES (?, ?, CAST(? AS JSON), ?, 'pending')
+//       `;
+//       db.query(insertBooking, [customer_id, service_id, JSON.stringify(slot_ids), address_id], (err3, result) => {
+//         if (err3) return res.status(500).json({ error: err3.message });
+
+//         res.json({
+//           status: true,
+//           message: 'Service booked successfully',
+//           booking_id: result.insertId,
+//           slot_ids,
+//           status_value: 'pending'
+//         });
+//       });
+//     });
+//   });
+// });
+
+
+router.post("/book-service", authenticate, async (req, res) => {
+  try {
+    const { service_id, slot_ids, address_id } = req.body;
+    const customer_id = req.user.id;
+
+    if (!service_id || !slot_ids || !Array.isArray(slot_ids) || slot_ids.length === 0 || !address_id) {
+      return res.status(400).json({ error: "Service ID, slot IDs array, and address ID are required" });
+    }
+
+    // Step 1: Verify service exists
+    const serviceCheck = `SELECT id, price FROM services WHERE id = ?`;
+    const [serviceResults] = await db.promise().query(serviceCheck, [service_id]);
+    if (serviceResults.length === 0) {
+      return res.status(404).json({ error: "Service not found" });
+    }
+
+    const servicePrice = serviceResults[0].price * slot_ids.length;
+
+    // Step 2: Create Razorpay order
+    const options = {
+      amount: servicePrice * 100, // in paise
+      currency: "INR",
+      receipt: `receipt_${Date.now()}`
+    };
+
+    const order = await razorpay.orders.create(options); // ✅ async/await call
+
+    // Step 3: Insert booking
+    const insertBooking = `
+      INSERT INTO bookings (customer_id, service_id, slot_id, address_id, status, razorpay_order_id, amount)
+      VALUES (?, ?, CAST(? AS JSON), ?, 'pending_payment', ?, ?)
+    `;
+    const [bookingResult] = await db.promise().query(insertBooking, [
+      customer_id,
+      service_id,
+      JSON.stringify(slot_ids),
+      address_id,
+      order.id,
+      servicePrice
+    ]);
+
+    const booking_id = bookingResult.insertId;
+
+    // Step 4: Insert transaction entry
+    const insertTxn = `
+      INSERT INTO transactions (booking_id, customer_id, razorpay_order_id, amount, status,transaction_type)
+      VALUES (?, ?, ?, ?, 'pending','service')
+    `;
+    await db.promise().query(insertTxn, [booking_id, customer_id, order.id, servicePrice]);
+
+    res.json({
+      status: true,
+      message: "Razorpay order created. Proceed with payment.",
+      booking_id,
+      razorpay_order: order,
+      amount: servicePrice,
+      slot_ids,
+      status_value: "pending_payment"
+    });
+
+  } catch (err) {
+    console.error("Book Service Error:", err);
+    res.status(500).json({ error: err.message || err });
+  }
+});
+
+router.post('/service/verify-payment', authenticate, (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, booking_id } = req.body;
+
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !booking_id) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
+
+  // Step 1: Generate expected signature
+  const generated_signature = crypto
+    .createHmac("sha256", key_secret)
+    .update(razorpay_order_id + "|" + razorpay_payment_id)
+    .digest("hex");
+
+  if (generated_signature === razorpay_signature) {
+    // ✅ Payment verified → update booking + transaction
+    const updateBooking = `
+      UPDATE bookings
+      SET status = 'confirmed',
+          razorpay_payment_id = ?
+      WHERE id = ?
+    `;
+    db.query(updateBooking, [razorpay_payment_id, booking_id], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      const updateTxn = `
+        UPDATE transactions
+        SET razorpay_payment_id = ?, razorpay_signature = ?, status = 'success'
+        WHERE booking_id = ?
+      `;
+      db.query(updateTxn, [razorpay_payment_id, razorpay_signature, booking_id]);
+
+      res.json({
+        status: true,
+        message: "Payment verified and booking confirmed"
+      });
+    });
+  } else {
+    // ❌ Invalid payment
+    const failTxn = `
+      UPDATE transactions
+      SET razorpay_payment_id = ?, razorpay_signature = ?, status = 'failed'
+      WHERE booking_id = ?
+    `;
+    db.query(failTxn, [razorpay_payment_id, razorpay_signature, booking_id]);
+
+    res.status(400).json({ error: "Invalid payment signature" });
+  }
+});
+
+
+router.get('/customer/transactions', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+
+  const sql = `
+    SELECT 
+      t.id AS transaction_id,
+      t.transaction_type,
+      t.amount,
+      t.status,
+      t.razorpay_order_id,
+      t.razorpay_payment_id,
+      t.created_at,
+      CASE 
+        WHEN t.transaction_type = 'service' THEN s.service_name
+        WHEN t.transaction_type = 'order' THEN 'Product Order'
+      END AS reference_name,
+      CASE 
+        WHEN t.transaction_type = 'service' THEN b.id
+        WHEN t.transaction_type = 'order' THEN o.id
+      END AS reference_id
+    FROM transactions t
+    LEFT JOIN bookings b ON t.booking_id = b.id
+    LEFT JOIN services s ON b.service_id = s.id
+    LEFT JOIN orders o ON t.order_id = o.id
+    WHERE t.customer_id = ?
+    ORDER BY t.id DESC
+  `;
+
+  db.query(sql, [customer_id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({
+      status: true,
+      message: 'Customer transactions fetched successfully',
+      data: results
+    });
+  });
+});
+
+
+
+router.get('/customer/bookings', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  const sql = `
+    SELECT 
+      b.id AS booking_id,
+      b.status,
+      b.amount,
+      b.remaining_amount,
+      b.is_after_pay_status,
+      b.created_at,
+      b.slot_id, -- JSON or stringified array
+      s.service_name,
+      s.service_description,
+      s.price,
+      s.service_type,
+      s.is_after_pay,
+      s.location,
+      s.meet_link,
+      ca.name AS address_name,
+      ca.description AS address
+    FROM bookings b
+    JOIN services s ON b.service_id = s.id
+    JOIN customer_addresses ca ON b.address_id = ca.id
+    WHERE b.customer_id = ?
+    ORDER BY b.id DESC
+  `;
+
+  db.query(sql, [customer_id], async (err, bookings) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (!bookings.length) {
+      return res.json({
+        status: true,
+        message: 'No bookings found',
+        data: []
+      });
+    }
+
+    // Process each booking and fetch slots
+    const promises = bookings.map(booking => {
+      return new Promise((resolve, reject) => {
+        let slotIds = [];
+
+        // Ensure slot_id is parsed properly
+        try {
+          if (typeof booking.slot_id === 'string') {
+            slotIds = JSON.parse(booking.slot_id); // string -> array
+          } else {
+            slotIds = booking.slot_id; // already JSON type
+          }
+
+          // Make sure it’s an array of integers
+          if (!Array.isArray(slotIds)) slotIds = [];
+          slotIds = slotIds.map(id => parseInt(id));
+        } catch (e) {
+          slotIds = [];
+        }
+
+        if (slotIds.length === 0) {
+          booking.slots = [];
+          delete booking.slot_id;
+          return resolve(booking);
+        }
+
+        const slotSql = `
+          SELECT id AS slot_id, slot_date, slot_time
+          FROM service_slots
+          WHERE id IN (?)
+        `;
+        db.query(slotSql, [slotIds], (err2, slotResults) => {
+          if (err2) return reject(err2);
+
+          booking.slots = slotResults; // attach array of slots
+          delete booking.slot_id; // don’t expose raw JSON
+          resolve(booking);
+        });
+      });
+    });
+
+    Promise.all(promises)
+      .then(data => {
+        res.json({
+          status: true,
+          message: 'Customer bookings fetched successfully',
+          data
+        });
+      })
+      .catch(err3 => {
+        res.status(500).json({ error: err3.message });
+      });
+  });
+});
+
+
+
+router.post('/add-address', authenticate, (req, res) => {
+  const { name, description,city,state,postal_code,latitude,longitude } = req.body;
+  const customer_id = req.user.id;
+
+  if (!name || !description) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+
+  const sql = `
+    INSERT INTO customer_addresses (customer_id, name, description,city,state,postal_code,latitude,longitude)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  db.query(sql, [customer_id, name, description,city,state,postal_code,latitude,longitude], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json({
+      status: true,
+      message: 'Address added successfully',
+      address_id: result.insertId
+    });
+  });
+});
+
+
+
+router.get('/list-addresses', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+
+  const sql = `
+    SELECT id, name, description,city,state,postal_code,latitude,longitude, created_at 
+    FROM customer_addresses 
+    WHERE customer_id = ? 
+    ORDER BY id DESC
+  `;
+  db.query(sql, [customer_id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json({
+      status: true,
+      message: 'Addresses fetched successfully',
+      data: results
+    });
+  });
+});
+
+router.delete('/delete-address/:id', authenticate, (req, res) => {
+  const customer_id = req.user.id;
+  const { id } = req.params;
+
+  const sql = `DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?`;
+
+  db.query(sql, [id, customer_id], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        status: false, 
+        message: 'Address not found or not authorized to delete' 
+      });
+    }
+
+    res.json({
+      status: true,
+      message: 'Address deleted successfully'
+    });
+  });
+});
+
+
+router.post('/bids/:bid_id/chat', authenticate, (req, res) => {
+  const sender_id = req.user.id;
+  const { bid_id } = req.params;
+  const { receiver_id, message } = req.body;
+
+  if (!message || !receiver_id) {
+    return res.status(400).json({ error: "Message and receiver_id required" });
+  }
+
+  const sql = `INSERT INTO chat_messages (bid_id, sender_id, receiver_id, message) 
+               VALUES (?, ?, ?, ?)`;
+  db.query(sql, [bid_id, sender_id, receiver_id, message], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json({
+      chat_id: result.insertId,
+      bid_id,
+      sender_id,
+      receiver_id,
+      message,
+      created_at: new Date()
+    });
+  });
+});
+
+
+router.get('/bids/:bid_id/chat', authenticate, (req, res) => {
+  const { bid_id } = req.params;
+
+  const sql = `
+    SELECT cm.*, u.full_name AS sender_name
+    FROM chat_messages cm
+    JOIN users u ON cm.sender_id = u.id
+    WHERE cm.bid_id = ?
+    ORDER BY cm.created_at ASC
+  `;
+
+  db.query(sql, [bid_id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json(results);
+  });
+});
+
+
+router.get('/my-chats', authenticate, (req, res) => {
+  const user_id = req.user.id;
+
+  const sql = `
+    SELECT cm.bid_id, prs.request_title, pb.vendor_id, pb.id AS bid_id,
+           (SELECT message FROM chat_messages 
+            WHERE bid_id = cm.bid_id ORDER BY created_at DESC LIMIT 1) AS last_message,
+           (SELECT created_at FROM chat_messages 
+            WHERE bid_id = cm.bid_id ORDER BY created_at DESC LIMIT 1) AS last_time
+    FROM chat_messages cm
+    JOIN product_bids pb ON cm.bid_id = pb.id
+    JOIN product_request_sets prs ON pb.request_set_id = prs.id
+    WHERE cm.sender_id = ? OR cm.receiver_id = ?
+    GROUP BY cm.bid_id
+    ORDER BY last_time DESC
+  `;
+
+  db.query(sql, [user_id, user_id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json(results);
+  });
+});
+
+
+
+router.post("/wallet/create-order", async (req, res) => {
+  const { user_id, user_type, amount } = req.body;
+  if (!user_id || !user_type || !amount) return res.status(400).json({ error: "Missing fields" });
+
+  try {
+    // 1. Create Razorpay order
+    const options = {
+      amount: amount * 100, // paise
+      currency: "INR",
+      receipt: `wallet_topup_${user_id}_${Date.now()}`,
+      notes: { user_id, user_type }
+    };
+    const order = await razorpay.orders.create(options);
+
+    // 2. Ensure wallet exists
+    const walletSQL = `
+      INSERT INTO wallets (user_id, user_type, balance)
+      VALUES (?, ?, 0)
+      ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)
+    `;
+    db.query(walletSQL, [user_id, user_type], (err, walletResult) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      const wallet_id = walletResult.insertId;
+
+      // 3. Insert pending transaction
+      const txnSQL = `
+        INSERT INTO wallet_transactions 
+          (wallet_id, transaction_type, amount, description, razorpay_order_id)
+        VALUES (?, 'credit', ?, 'Wallet Topup Pending', ?)
+      `;
+      db.query(txnSQL, [wallet_id, amount, order.id], (err2, txnResult) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+
+        res.json({
+          success: true,
+          wallet_id,
+          transaction_id: txnResult.insertId,
+          razorpay_order: order
+        });
+      });
+    });
+
+  } catch (error) {
+    console.error("Razorpay Order Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+
+// router.post("/wallet/create-order", async (req, res) => {
+//   const { user_id, user_type, amount } = req.body;
+
+//   try {
+//     const options = {
+//       amount: amount * 100, // in paise
+//       currency: "INR",
+//       receipt: `wallet_topup_${user_id}_${Date.now()}`,
+//       notes: { user_id, user_type }
+//     };
+
+//     const order = await razorpay.orders.create(options);
+//     res.json({ success: true, order });
+//   } catch (error) {
+//     console.error("Razorpay Order Error:", error);
+//     res.status(500).json({ success: false, error: error.message });
+//   }
+// });
+
+// router.post("/wallet/verify", (req, res) => {
+//   const { user_id, user_type, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
+
+//   // ✅ Step 1: Verify Signature
+//   const sign = crypto
+//     .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+//     .update(razorpay_order_id + "|" + razorpay_payment_id)
+//     .digest("hex");
+
+//   if (sign !== razorpay_signature) {
+//     return res.status(400).json({ success: false, message: "Invalid payment signature" });
+//   }
+
+//   // ✅ Step 2: Credit Wallet
+//   const getWalletSQL = "SELECT * FROM wallets WHERE user_id = ? AND user_type = ?";
+//   db.query(getWalletSQL, [user_id, user_type], (err, wallets) => {
+//     if (err) return res.status(500).json({ error: "Database error" });
+//     if (!wallets.length) return res.status(404).json({ error: "Wallet not found" });
+
+//     const wallet = wallets[0];
+//     const newBalance = parseFloat(wallet.balance) + parseFloat(amount);
+
+//     const updateSQL = "UPDATE wallets SET balance = ? WHERE id = ?";
+//     db.query(updateSQL, [newBalance, wallet.id], (err2) => {
+//       if (err2) return res.status(500).json({ error: "Update error" });
+
+//       const txnSQL = `
+//         INSERT INTO wallet_transactions (wallet_id, transaction_type, amount, description)
+//         VALUES (?, 'credit', ?, 'Wallet Topup via Razorpay')
+//       `;
+//       db.query(txnSQL, [wallet.id, amount], (err3) => {
+//         if (err3) return res.status(500).json({ error: "Transaction error" });
+//         res.json({ success: true, balance: newBalance });
+//       });
+//     });
+//   });
+// });
+
+router.post("/wallet/verify", (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+  const sign = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+    .update(razorpay_order_id + "|" + razorpay_payment_id)
+    .digest("hex");
+
+  if (sign !== razorpay_signature) return res.status(400).json({ success: false, message: "Invalid signature" });
+
+  // 1. Get pending transaction
+  const txnSQL = "SELECT * FROM wallet_transactions WHERE razorpay_order_id = ? AND transaction_type='credit'";
+  db.query(txnSQL, [razorpay_order_id], (err, txns) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!txns.length) return res.status(404).json({ error: "Transaction not found" });
+
+    const txn = txns[0];
+
+    // 2. Update wallet balance
+    const updateWalletSQL = "UPDATE wallets SET balance = balance + ? WHERE id = ?";
+    db.query(updateWalletSQL, [txn.amount, txn.wallet_id], (err2) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+
+      // 3. Update transaction to success
+      const updateTxnSQL = `
+        UPDATE wallet_transactions
+        SET razorpay_payment_id = ?, description = 'Wallet Topup Success', status = 'success'
+        WHERE id = ?
+      `;
+      db.query(updateTxnSQL, [razorpay_payment_id, txn.id], (err3) => {
+        if (err3) return res.status(500).json({ error: err3.message });
+        res.json({ success: true, wallet_id: txn.wallet_id, amount: txn.amount });
+      });
+    });
+  });
+});
+
+router.get("/wallet/details", (req, res) => {
+  const { user_id, user_type } = req.query;
+
+  if (!user_id || !user_type) {
+    return res.status(400).json({ error: "user_id and user_type are required" });
+  }
+
+  const walletSQL = "SELECT * FROM wallets WHERE user_id = ? AND user_type = ?";
+  db.query(walletSQL, [user_id, user_type], (err, walletRows) => {
+    if (err) return res.status(500).json({ error: "Database error", details: err.message });
+
+    if (!walletRows.length) {
+      return res.json({
+        success: true,
+        wallet: { user_id, user_type, balance: 0 },
+        transactions: []
+      });
+    }
+
+    const wallet = walletRows[0];
+
+    const txnSQL = "SELECT * FROM wallet_transactions WHERE wallet_id = ? ORDER BY id DESC LIMIT 20";
+    db.query(txnSQL, [wallet.id], (err2, txnRows) => {
+      if (err2) return res.status(500).json({ error: "Failed to fetch transactions" });
+
+      res.json({
+        success: true,
+        wallet: {
+          user_id: wallet.user_id,
+          user_type: wallet.user_type,
+          balance: wallet.balance
+        },
+        transactions: txnRows
+      });
+    });
+  });
+});
+
+router.post("/book-service-postpay", authenticate, async (req, res) => {
+  try {
+    const { service_id, slot_ids, address_id } = req.body;
+    const customer_id = req.user.id;
+
+    if (!service_id || !slot_ids?.length || !address_id) {
+      return res.status(400).json({ error: "Service ID, slot IDs and address ID required" });
+    }
+
+    // ✅ Check service and get subcategory (and platform fee)
+    const [serviceRows] = await db.promise().query(
+      `SELECT s.id, s.sub_category_id, sc.bid_price
+       FROM services s
+       LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+       WHERE s.id=?`,
+      [service_id]
+    );
+
+    if (!serviceRows.length) return res.status(404).json({ error: "Service not found" });
+
+    const service = serviceRows[0];
+    const bookingFee = service.bid_price || 0; // use platform_fee from subcategory
+
+    if (bookingFee <= 0) {
+      return res.status(400).json({ error: "Platform fee not configured for this service" });
+    }
+
+    // ✅ Create Razorpay order for booking fee
+    const order = await razorpay.orders.create({
+      amount: bookingFee * 100,
+      currency: "INR",
+      receipt: `postpay_booking_fee_${Date.now()}`,
+      notes: { service_id, customer_id }
+    });
+
+    // ✅ Insert booking (partially paid mode)
+    const [bookingResult] = await db.promise().query(
+      `INSERT INTO bookings 
+       (customer_id, service_id, slot_id, address_id, status, razorpay_order_id, amount, created_at) 
+       VALUES (?, ?, ?, ?, 'pending_fee_payment', ?, ?, NOW())`,
+      [customer_id, service_id, JSON.stringify(slot_ids), address_id, order.id, bookingFee]
+    );
+
+    const booking_id = bookingResult.insertId;
+
+    // ✅ Insert transaction for booking fee
+    await db.promise().query(
+      `INSERT INTO transactions 
+       (booking_id, customer_id, razorpay_order_id, amount, status, transaction_type) 
+       VALUES (?, ?, ?, ?, 'pending','booking_fee')`,
+      [booking_id, customer_id, order.id, bookingFee]
+    );
+
+    res.json({
+      status: true,
+      message: "Booking created. Pay booking fee to confirm.",
+      booking_id,
+      razorpay_order: order,
+      booking_fee: bookingFee,
+      status_value: "pending_fee_payment"
+    });
+
+  } catch (err) {
+    console.error("Postpay Booking Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+router.post("/pay-remaining", authenticate, async (req, res) => {
+  const { booking_id } = req.body;
+  const customer_id = req.user.id;
+
+  const [rows] = await db.promise().query(
+    `SELECT remaining_amount FROM bookings WHERE id=? AND customer_id=? AND is_after_pay_status='awaiting_remaining_payment'`,
+    [booking_id, customer_id]
+  );
+  if (!rows.length) return res.status(400).json({ error: "Booking not eligible for remaining payment" });
+
+  const remainingAmount = rows[0].remaining_amount;
+
+  const order = await razorpay.orders.create({
+    amount: remainingAmount * 100,
+    currency: "INR",
+    receipt: `postpay_remaining_${booking_id}`
+  });
+
+  await db.promise().query(
+    `INSERT INTO transactions (booking_id, customer_id, razorpay_order_id, amount, status, transaction_type)
+     VALUES (?, ?, ?, ?, 'pending','remaining_payment')`,
+    [booking_id, customer_id, order.id, remainingAmount]
+  );
+
+  res.json({
+    status: true,
+    message: "Pay remaining balance.",
+    razorpay_order: order,
+    booking_id,
+    remaining_amount: remainingAmount,
+    status_value: "pending_payment"
+  });
+});
+
+
+router.post("/verify-remaining-payment", authenticate, async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, booking_id } = req.body;
+    const customer_id = req.user.id;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !booking_id) {
+      return res.status(400).json({ error: "Missing payment details" });
+    }
+
+    // Generate expected signature
+    const crypto = require("crypto");
+    const generated_signature = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature !== razorpay_signature) {
+      return res.status(400).json({ error: "Payment signature mismatch" });
+    }
+
+    // Update transaction to success
+    await db.promise().query(
+      `UPDATE transactions 
+       SET status='success', razorpay_payment_id=?, razorpay_signature=? 
+       WHERE razorpay_order_id=? AND booking_id=? AND customer_id=?`,
+      [razorpay_payment_id, razorpay_signature, razorpay_order_id, booking_id, customer_id]
+    );
+
+    // Mark booking fully paid
+    await db.promise().query(
+      `UPDATE bookings 
+       SET status='paid', payment_status='completed', updated_at=NOW() 
+       WHERE id=? AND customer_id=?`,
+      [booking_id, customer_id]
+    );
+
+    res.json({
+      status: true,
+      message: "Remaining payment verified and booking marked as paid",
+      booking_id,
+      razorpay_order_id,
+      razorpay_payment_id,
+      status_value: "paid"
+    });
+
+  } catch (err) {
+    console.error("Verify Remaining Payment Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+module.exports = router;

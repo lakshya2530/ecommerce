@@ -1,0 +1,650 @@
+const express = require('express');
+const bcrypt = require('bcrypt');
+const db = require('../db/connection');
+const router = express.Router();
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const verifyToken = require('../middleware/auth');
+const Razorpay = require('razorpay');
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
+});
+
+
+// Multer configuration directly in the same file
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, 'uploads/profiles'); // Make sure this folder exists
+    },
+    filename: function (req, file, cb) {
+      const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, uniqueName + path.extname(file.originalname));
+    }
+  });
+  const upload = multer({ storage: storage });
+// ✅ Signup
+router.post('/customer-signup', async (req, res) => {
+  const { email, password, confirm_password } = req.body;
+
+  if (!email || !password || !confirm_password) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+
+  if (password !== confirm_password) {
+    return res.status(400).json({ error: 'Passwords do not match' });
+  }
+
+  // check if user already exists
+  db.query('SELECT * FROM users WHERE email = ? AND user_type = "customer"', [email], async (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length > 0) return res.status(409).json({ error: 'Email already registered' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = {
+      email,
+      password: hashedPassword,
+      user_type: 'customer',
+      status: 'active',
+      registration_date: new Date()
+    };
+
+    db.query('INSERT INTO users SET ?', user, (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.status(201).json({ message: 'Customer registered successfully', id: result.insertId });
+    });
+  });
+});
+
+router.post("/register-customer", (req, res) => {
+  const { full_name, email, phone, password, confirm_password, referral_code } = req.body;
+
+  if (password !== confirm_password)
+    return res.status(400).json({ message: "Passwords do not match" });
+
+  const emailSQL = "SELECT * FROM otp_verifications WHERE email = ? AND type = 'email' AND is_verified = 1";
+  const phoneSQL = "SELECT * FROM otp_verifications WHERE phone = ? AND type = 'phone' AND is_verified = 1";
+  const userExistsSQL = "SELECT * FROM users WHERE email = ? OR phone = ?";
+
+  db.query(userExistsSQL, [email, phone], (existsErr, users) => {
+    if (existsErr) {
+      console.error("User check error:", existsErr);
+      return res.status(500).json({ error: "User check failed", details: existsErr.message });
+    }
+
+    if (users.length > 0) {
+      return res.status(400).json({ error: "User with this email or phone already exists" });
+    }
+
+    // ✅ Verify email and phone OTP
+    db.query(emailSQL, [email], (err1, emailRows) => {
+      if (err1) return res.status(500).json({ error: "Email check failed" });
+
+      db.query(phoneSQL, [phone], (err2, phoneRows) => {
+        if (err2) return res.status(500).json({ error: "Phone check failed" });
+
+        if (!emailRows.length || !phoneRows.length) {
+          return res.status(400).json({ message: "Email and Phone must be verified" });
+        }
+
+        // ✅ Generate unique referral code
+        const newReferralCode = "REF" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        // ✅ Check if user entered referral_code is valid
+        if (referral_code) {
+          const refSQL = "SELECT id FROM users WHERE referral_code = ?";
+          db.query(refSQL, [referral_code], (refErr, refRows) => {
+            if (refErr) return res.status(500).json({ error: "Referral check failed" });
+
+            let referredBy = null;
+            if (refRows.length > 0) {
+              referredBy = refRows[0].id;
+            }
+
+            // 🔒 Hash password
+            bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+              if (hashErr) return res.status(500).json({ error: "Hashing error" });
+
+              const insertSQL = `
+                INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type, referral_code, referred_by)
+                VALUES (?, ?, ?, ?, 1, 1, 1, 'customer', ?, ?)
+              `;
+              db.query(insertSQL, [full_name, email, phone, hashedPassword, newReferralCode, referredBy], (insertErr, result) => {
+                if (insertErr) {
+                  console.error("Insert error:", insertErr);
+                  return res.status(500).json({ error: "Insert error", details: insertErr.message });
+                }
+
+                res.json({ 
+                  success: true, 
+                  message: "User registered successfully", 
+                  user_id: result.insertId, 
+                  referral_code: newReferralCode 
+                });
+              });
+            });
+          });
+        } else {
+          // 🚀 No referral entered
+          bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+            if (hashErr) return res.status(500).json({ error: "Hashing error" });
+
+            const insertSQL = `
+              INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type, referral_code)
+              VALUES (?, ?, ?, ?, 1, 1, 1, 'customer', ?)
+            `;
+            db.query(insertSQL, [full_name, email, phone, hashedPassword, newReferralCode], (insertErr, result) => {
+              if (insertErr) {
+                console.error("Insert error:", insertErr);
+                return res.status(500).json({ error: "Insert error", details: insertErr.message });
+              }
+
+              res.json({ 
+                success: true, 
+                message: "User registered successfully", 
+                user_id: result.insertId, 
+                referral_code: newReferralCode 
+              });
+            });
+          });
+        }
+      });
+    });
+  });
+});
+
+// router.post("/register-customer", (req, res) => {
+//   const { full_name, email, phone, password, confirm_password } = req.body;
+
+//   if (password !== confirm_password)
+//     return res.status(400).json({ message: "Passwords do not match" });
+
+//   const emailSQL = "SELECT * FROM otp_verifications WHERE email = ? AND type = 'email' AND is_verified = 1";
+//   const phoneSQL = "SELECT * FROM otp_verifications WHERE phone = ? AND type = 'phone' AND is_verified = 1";
+
+//   const userExistsSQL = "SELECT * FROM users WHERE email = ? OR phone = ?";
+//   db.query(userExistsSQL, [email, phone], (existsErr, users) => {
+//     if (existsErr) {
+//       console.error("User check error:", existsErr);
+//       return res.status(500).json({ error: "User check failed", details: existsErr.message });
+//     }
+
+//     if (users.length > 0) {
+//       return res.status(400).json({ error: "User with this email or phone already exists" });
+//     }
+
+//     // 🟢 Move the rest of the logic inside this block
+//     db.query(emailSQL, [email], (err1, emailRows) => {
+//       if (err1) return res.status(500).json({ error: "Email check failed" });
+
+//       db.query(phoneSQL, [phone], (err2, phoneRows) => {
+//         if (err2) return res.status(500).json({ error: "Phone check failed" });
+
+//         if (!emailRows.length || !phoneRows.length) {
+//           return res.status(400).json({ message: "Email and Phone must be verified" });
+//         }
+
+//         bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+//           if (hashErr) return res.status(500).json({ error: "Hashing error" });
+
+//           const insertSQL = `
+//             INSERT INTO users (full_name, email, phone, password, is_email_verified, is_phone_verified, registration_step, user_type)
+//             VALUES (?, ?, ?, ?, 1, 1, 1, 'customer')
+//           `;
+//           db.query(insertSQL, [full_name, email, phone, hashedPassword], (insertErr, result) => {
+//             if (insertErr) {
+//               console.error("Insert error:", insertErr);
+//               return res.status(500).json({ error: "Insert error", details: insertErr.message });
+//             }
+
+//             res.json({ success: true, message: "User registered successfully", user_id: result.insertId });
+//           });
+//         });
+//       });
+//     });
+//   });
+// });
+
+
+// ✅ Login
+router.post("/customer-login", (req, res) => {
+  const { identifier, password } = req.body;
+
+  const sql = "SELECT * FROM users WHERE email = ? OR phone = ?";
+  db.query(sql, [identifier, identifier], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (!results.length) return res.status(401).json({ error: "Invalid credentials" });
+
+    const user = results[0];
+
+    bcrypt.compare(password, user.password, (compareErr, isMatch) => {
+      if (compareErr || !isMatch) return res.status(401).json({ error: "Invalid credentials" });
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, user_type: user.user_type },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+        delete user.password; // remove password from response
+
+        res.json({
+          message: "Login successful",
+          token,
+          user: {
+            ...user
+          }
+        });
+    
+    });
+  });
+});
+
+router.post('/forgot-password', (req, res) => {
+  const { identifier } = req.body; // email or phone
+
+  const sql = "SELECT * FROM users WHERE email = ? OR phone = ?";
+  db.query(sql, [identifier, identifier], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (!results.length) return res.status(404).json({ error: "User not found" });
+
+    const user = results[0];
+    const otp = 123456;//Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    const sqlOtp = `UPDATE users SET reset_otp = ?, reset_otp_expiry = ? WHERE id = ?`;
+    db.query(sqlOtp, [otp, expiry, user.id], (err2) => {
+      if (err2) return res.status(500).json({ error: "Failed to save OTP" });
+
+      // TODO: send via email or SMS (use nodemailer / Twilio / any SMS API)
+      console.log(`OTP for ${identifier}: ${otp}`);
+
+      res.json({ message: "OTP sent successfully" });
+    });
+  });
+});
+
+router.post('/reset-password', (req, res) => {
+  const { identifier, otp, newPassword } = req.body;
+
+  if (!isStrongPassword(newPassword)) {
+    return res.status(400).json({ 
+      error: "Password must be at least 6 chars, include upper, lower, digit, and special char." 
+    });
+  }
+//AND reset_otp_expiry > NOW()
+  const sql = "SELECT * FROM users WHERE (email = ? OR phone = ?) AND reset_otp = ?";
+  db.query(sql, [identifier, identifier, otp], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (!results.length) return res.status(400).json({ error: "Invalid OTP or expired" });
+
+    const user = results[0];
+
+    bcrypt.hash(newPassword, 10, (hashErr, hash) => {
+      if (hashErr) return res.status(500).json({ error: "Password hashing failed" });
+
+      const sqlUpdate = `
+        UPDATE users 
+        SET password = ?, reset_otp = NULL, reset_otp_expiry = NULL 
+        WHERE id = ?
+      `;
+      db.query(sqlUpdate, [hash, user.id], (err2) => {
+        if (err2) return res.status(500).json({ error: "Failed to update password" });
+
+        res.json({ message: "Password reset successful" });
+      });
+    });
+  });
+});
+
+function isStrongPassword(password) {
+  const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$/;
+  return regex.test(password);
+}
+
+
+
+// router.post('/customer-login', (req, res) => {
+//     const { email, password } = req.body;
+  
+//     const sql = 'SELECT * FROM users WHERE email = ? AND user_type = "customer"';
+//     db.query(sql, [email], async (err, results) => {
+//       if (err) return res.status(500).json({ error: 'Database error' });
+//       if (results.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+  
+//       const user = results[0];
+  
+//       const match = await bcrypt.compare(password, user.password);
+//       if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+  
+//       // ✅ Generate JWT token
+//       const token = jwt.sign({ id: user.id, email: user.email, user_type: user.user_type }, process.env.JWT_SECRET, {
+//         expiresIn: '7d',
+//       });
+
+//           // ✅ Check if the vendor has a shop
+//     const shopCheckSql = 'SELECT COUNT(*) AS shop_count FROM vendor_shops WHERE vendor_id = ?';
+//     db.query(shopCheckSql, [user.id], (shopErr, shopResult) => {
+//       if (shopErr) return res.status(500).json({ error: 'Shop check failed' });
+
+//       const has_shop = shopResult[0].shop_count > 0;
+
+  
+//       // Optional: exclude password from response
+//       delete user.password;
+
+//       res.json({
+//         message: 'Login successful',
+//         token,
+//         user: {
+//           ...user,
+//           has_shop
+//         },
+//       });
+//     });
+//   });
+// });
+  
+//       res.json({
+//         message: 'Login successful',
+//         token,
+//         user,
+//         has_shop
+//       });
+//     });
+//   });
+
+  router.put('/update-profile', verifyToken, upload.single('image'), (req, res) => {
+    const { full_name, user_name, age, gender, bio } = req.body;
+    const userId = req.user.id; // Extracted from token
+  
+    const updatedData = {
+      full_name,
+      user_name,
+      age,
+      gender,
+      bio
+    };
+  
+    if (req.file) {
+      updatedData.image = req.file.filename;
+    }
+  
+    db.query('UPDATE users SET ? WHERE id = ?', [updatedData, userId], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Profile updated successfully' });
+    });
+  });
+
+  router.get('/get-profile/:id', (req, res) => {
+    const { id } = req.params;
+  
+    db.query('SELECT * FROM users WHERE id = ?', [id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (results.length === 0) return res.status(404).json({ message: 'User not found' });
+  
+      const user = results[0];
+  
+    //   user.image = user.image
+    //     ? `${BASE_URL}/uploads/profiles/${user.image}`
+    //     : null;
+  
+      res.json(user);
+    });
+  });
+
+  router.post('/customer-bank-add', verifyToken, async (req, res) => {
+    const user_id = req.user.id;
+    const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
+  
+    try {
+      // 1️⃣ Fetch vendor details for legal info
+      const [vendor] = await new Promise((resolve, reject) => {
+        db.query(`SELECT full_name, email, phone FROM users WHERE id = ?`, [user_id], (err, result) => {
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+  
+      if (!vendor) return res.status(404).json({ error: "Vendor not found" });
+  
+      // 2️⃣ Create Razorpay linked account (sub-merchant)
+      const accountPayload = {
+        name: account_holder_name,
+        email: vendor.email,
+        contact: vendor.phone,
+        type: "route",
+        business_type: "individual",
+        legal_business_name: vendor.full_name,
+        customer_facing_business_name: vendor.full_name,
+        profile: {
+          category: "services",
+          subcategory: "other_services",
+          description: "Vendor registered on platform"
+        },
+        bank_account: {
+          name: account_holder_name,
+          account_number: account_number,
+          ifsc: ifsc_code
+        }
+      };
+  
+      const razorpayAccount = await razorpay.accounts.create(accountPayload);
+  
+      // 3️⃣ Insert in local database
+      const sql = `
+        INSERT INTO vendor_bank_accounts 
+        (user_id, account_holder_name, account_number, ifsc_code, branch_name, razorpay_account_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+  
+      const values = [
+        user_id,
+        account_holder_name,
+        account_number,
+        ifsc_code,
+        branch_name,
+        razorpayAccount.id
+      ];
+  
+      db.query(sql, values, (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+  
+        res.json({
+          status: true,
+          message: "Bank account added successfully & Razorpay account created",
+          bank_id: result.insertId,
+          razorpay_account_id: razorpayAccount.id
+        });
+      });
+  
+    } catch (error) {
+      console.error("Razorpay account creation error:", error);
+      res.status(500).json({
+        status: false,
+        message: "Failed to create Razorpay account",
+        error: error.error?.description || error.message
+      });
+    }
+  });
+  
+
+//   router.post('/customer-bank-add', verifyToken, (req, res) => {
+//   const user_id = req.user.id; // or req.user.vendor_id
+//   const { account_holder_name, account_number, ifsc_code, branch_name } = req.body;
+
+//   const sql = `INSERT INTO vendor_bank_accounts SET ?`;
+//   const data = {
+//     user_id,
+//     account_holder_name,
+//     account_number,
+//     ifsc_code,
+//     branch_name
+//   };
+
+//   db.query(sql, data, (err, result) => {
+//     if (err) return res.status(500).json({ error: err.message });
+//     res.json({ message: 'Bank account added', id: result.insertId });
+//   });
+// });
+
+
+router.put('/customer-bank-edit/:id', verifyToken, (req, res) => {
+    const user_id = req.user.id;
+    const { id } = req.params;
+    const updatedData = req.body;
+  
+    const sql = `UPDATE vendor_bank_accounts SET ? WHERE id = ? AND user_id = ?`;
+  
+    db.query(sql, [updatedData, id, user_id], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Bank account updated' });
+    });
+  });
+
+  
+  router.get('/customer-bank-list', verifyToken, (req, res) => {
+    const user_id = req.user.id;
+  
+    db.query('SELECT * FROM vendor_bank_accounts WHERE user_id = ?', [user_id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(results);
+    });
+  });
+
+  router.delete('/customer-bank-delete/:id', verifyToken, (req, res) => {
+    const user_id = req.user.id;
+    const { id } = req.params;
+  
+    db.query('DELETE FROM vendor_bank_accounts WHERE id = ? AND user_id = ?', [id, user_id], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Bank account deleted' });
+    });
+  });
+  
+  router.get('/cms-page/privacy-policy', (req, res) => {
+    const { slug, user_type } = req.params;
+    const sql = "SELECT * FROM cms_pages WHERE slug = 'privacy-policy' AND user_type = 'customer'";
+  
+    db.query(sql, [slug, user_type], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (result.length === 0) return res.status(404).json({ message: 'Page not found' });
+      res.json(result[0]);
+    });
+  });
+
+  router.get('/cms-page/terms-condition', (req, res) => {
+    const { slug, user_type } = req.params;
+    const sql = "SELECT * FROM cms_pages WHERE slug = 'terms-condition' AND user_type = 'customer'";
+  
+    db.query(sql, [slug, user_type], (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (result.length === 0) return res.status(404).json({ message: 'Page not found' });
+      res.json(result[0]);
+    });
+  });
+
+  router.get('/vendor-tickets', verifyToken, (req, res) => {
+    const vendorId = req.user.id;
+  
+    const sql = `
+      SELECT ticket_id, title, description, status, created_at
+      FROM tickets
+      WHERE created_by = ?
+      ORDER BY created_at DESC
+    `;
+  
+    db.query(sql, [vendorId], (err, results) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json({ tickets: results });
+    });
+  });
+  
+
+
+  // Web form registration
+
+  router.post("/register-form", async (req, res) => {
+    try {
+      const {
+        user_type, // 'vendor', 'customer', or 'delivery'
+        business_name,
+        contact_person_name,
+        name,
+        mobile_number,
+        email,
+        gstin,
+        product_category,
+        description
+      } = req.body;
+  
+      // Basic validation
+      if (!user_type || !mobile_number) {
+        return res.status(400).json({
+          status: false,
+          error: "User type and mobile number are required"
+        });
+      }
+  
+      // Insert entry
+      const [result] = await db.promise().query(
+        `INSERT INTO registrations 
+         (user_type, business_name, contact_person_name, name, mobile_number, email, gstin, product_category, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          user_type,
+          business_name || null,
+          contact_person_name || null,
+          name || null,
+          mobile_number,
+          email || null,
+          gstin || null,
+          product_category || null,
+          description || null
+        ]
+      );
+  
+      res.json({
+        status: true,
+        message: `${user_type} registration submitted successfully`,
+        registration_id: result.insertId
+      });
+    } catch (err) {
+      console.error("Registration Form Error:", err);
+      res.status(500).json({ status: false, error: err.message });
+    }
+  });
+  
+
+  router.get("/registrations", async (req, res) => {
+    try {
+      const { user_type } = req.query; // optional filter
+    
+      let sql = `SELECT * FROM registrations`;
+      const params = [];
+  
+      if (user_type) {
+        sql += ` WHERE user_type = ?`;
+        params.push(user_type);
+      }
+  
+      sql += ` ORDER BY id DESC`;
+  
+      const [rows] = await db.promise().query(sql, params);
+  
+      res.json({
+        status: true,
+        message: "Registrations fetched successfully",
+        data: rows
+      });
+    } catch (err) {
+      console.error("Fetch Registrations Error:", err);
+      res.status(500).json({ status: false, error: err.message });
+    }
+  });
+  
+  
+module.exports = router;
