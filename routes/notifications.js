@@ -21,6 +21,7 @@ router.post("/send-notification", async (req, res) => {
   }
 });
 
+
 router.post("/test-push", async (req, res) => {
   try {
     const { token, title, body } = req.body;
