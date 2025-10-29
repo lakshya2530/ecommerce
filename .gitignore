@@ -5,3 +5,4 @@ npm-debug.log
 db
 config/razorpay.js
 bidzord-88c4416f9619.json
+config/firebase.js
