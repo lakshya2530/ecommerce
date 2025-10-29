@@ -349,19 +349,15 @@ const crypto = require("crypto");
 //   }
 // });
 
+// 🏠 Customer Home API
 router.get('/customer/home', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
-    const search = req.query.search || null;
+    const search = req.query.search?.trim() || null;
     const userLat = parseFloat(req.query.latitude);
     const userLng = parseFloat(req.query.longitude);
+    const limit = parseInt(req.query.limit) || 10;
 
-    const safeJsonParse = (str, fallback = []) => {
-      if (!str) return fallback;
-      try { return JSON.parse(str); } catch { return fallback; }
-    };
-
-    // 1️⃣ Product categories
     // 📦 Product Categories
     const categories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
@@ -380,6 +376,7 @@ router.get('/customer/home', async (req, res) => {
         resolve(results);
       });
     });
+
     // 🏷️ Vendor Banners
     const vendorBanners = await new Promise((resolve, reject) => {
       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
@@ -391,7 +388,7 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 🛒 Products — Added new searchable fields: brand, model_name, color, specifications
+    // 🛒 Products
     const productSQL = `
       SELECT p.*, vs.latitude, vs.longitude 
       FROM products p
@@ -400,26 +397,22 @@ router.get('/customer/home', async (req, res) => {
       ${search ? `AND (
           p.name LIKE ? OR 
           p.description LIKE ? OR 
-          p.category LIKE ?
-      )` : ''}
-      ORDER BY p.id DESC LIMIT 10
-    `;
-    const productParams = search ? Array(4).fill(`%${search}%`) : [];
           p.category LIKE ? OR
           p.brand LIKE ? OR
           p.model_name LIKE ? OR
           p.color LIKE ? OR
           p.specifications LIKE ?
       )` : ''}
-      ORDER BY p.id DESC LIMIT 10
+      ORDER BY p.id DESC LIMIT ?
     `;
 
-    const productParams = search ? Array(7).fill(`%${search}%`) : [];
+    const productParams = search
+      ? Array(7).fill(`%${search}%`).concat(limit)
+      : [limit];
 
     const products = await new Promise((resolve, reject) => {
       db.query(productSQL, productParams, (err, results) => {
         if (err) return reject(err);
-
         resolve(results.map(p => {
           const distance = (userLat && userLng && p.latitude && p.longitude)
             ? calculateDistance(userLat, userLng, p.latitude, p.longitude)
@@ -435,12 +428,12 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
-    // 🧰 Services — Added new searchable fields: labels, brand, features
+    // 🧰 Services
     const serviceSQL = `
       SELECT s.*, vs.latitude, vs.longitude 
       FROM services s
       LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
-      WHERE 1=1
+      WHERE s.status = 'active'
       ${search ? `AND (
         s.service_name LIKE ? OR 
         s.service_description LIKE ? OR 
@@ -448,14 +441,16 @@ router.get('/customer/home', async (req, res) => {
         s.brands LIKE ? OR 
         s.labels LIKE ?
       )` : ''}
-      ORDER BY s.id DESC LIMIT 10
+      ORDER BY s.id DESC LIMIT ?
     `;
-    const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
+
+    const serviceParams = search
+      ? Array(5).fill(`%${search}%`).concat(limit)
+      : [limit];
 
     const services = await new Promise((resolve, reject) => {
       db.query(serviceSQL, serviceParams, (err, results) => {
         if (err) return reject(err);
-
         resolve(results.map(s => {
           const distance = (userLat && userLng && s.latitude && s.longitude)
             ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
@@ -480,9 +475,12 @@ router.get('/customer/home', async (req, res) => {
       FROM vendor_shops 
       WHERE 1=1 
       ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
-      ORDER BY id DESC LIMIT 10
+      ORDER BY id DESC LIMIT ?
     `;
-    const shopParams = search ? Array(3).fill(`%${search}%`) : [];
+
+    const shopParams = search
+      ? Array(3).fill(`%${search}%`).concat(limit)
+      : [limit];
 
     const shops = await new Promise((resolve, reject) => {
       db.query(shopSQL, shopParams, (err, results) => {
@@ -1245,7 +1243,7 @@ router.get('/customer/services', (req, res) => {
       WHERE c.customer_id = ?
     `;
   
-    
+
     db.query(sql, [customer_id], (err, results) => {
       if (err) return res.status(500).json({ error: err.message });
   
