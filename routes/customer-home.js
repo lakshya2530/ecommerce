@@ -397,15 +397,15 @@ router.get('/customer/home', async (req, res) => {
       ${search ? `AND (
           p.name LIKE ? OR 
           p.description LIKE ? OR 
-          p.category LIKE ? OR
-          p.brand LIKE ? OR
-          p.model_name LIKE ? OR
-          p.color LIKE ? OR
           p.specifications LIKE ?
       )` : ''}
       ORDER BY p.id DESC LIMIT ?
     `;
 
+    // p.category LIKE ? OR
+    // p.brand LIKE ? OR
+    // p.model_name LIKE ? OR
+    // p.color LIKE ? OR
     const productParams = search
       ? Array(7).fill(`%${search}%`).concat(limit)
       : [limit];
