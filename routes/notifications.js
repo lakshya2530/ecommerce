@@ -2,10 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Notification, NotificationTemplate,User } = require('../models'); 
 const authenticateToken = require("../middleware/auth");
-<<<<<<< HEAD
 
-
-=======
 const sendPushNotification = require("../utils/pushNotification");
 
 
@@ -51,7 +48,6 @@ router.post("/test-push", async (req, res) => {
   }
 });
 
->>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 router.get('/', authenticateToken, async (req, res) => {
     const userId = req.user.user_id; // Get user ID directly from the decoded token
 
