@@ -1245,6 +1245,7 @@ router.get('/customer/services', (req, res) => {
       WHERE c.customer_id = ?
     `;
   
+    
     db.query(sql, [customer_id], (err, results) => {
       if (err) return res.status(500).json({ error: err.message });
   
