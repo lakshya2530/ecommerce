@@ -267,7 +267,10 @@ const crypto = require("crypto");
 //             brands: safeJsonParse(s.brands, []),
 //             features: safeJsonParse(s.features, []),
 //             exclusions: safeJsonParse(s.exclusions, []),
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
 //             previous_work: safeJsonParse(s.previous_work, [])
 //           }))
 //         );
@@ -294,7 +297,10 @@ const crypto = require("crypto");
 //             additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
 //           }))
 //         );
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
 //             previous_work: safeJsonParse(s.previous_work, []),
 //             distance_in_km: distance
 //           };
@@ -328,7 +334,10 @@ const crypto = require("crypto");
 //             distance_in_km: distance
 //           };
 //         }));
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
 //       });
 //     });
 
@@ -394,6 +403,10 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
+=======
+    // 4️⃣ Products (search across multiple fields + distance)
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
     // 🛒 Products — Added new searchable fields: brand, model_name, color, specifications
     const productSQL = `
       SELECT p.*, vs.latitude, vs.longitude 
@@ -403,11 +416,14 @@ router.get('/customer/home', async (req, res) => {
       ${search ? `AND (
           p.name LIKE ? OR 
           p.description LIKE ? OR 
+<<<<<<< HEAD
           p.category LIKE ?
       )` : ''}
       ORDER BY p.id DESC LIMIT 10
     `;
     const productParams = search ? Array(4).fill(`%${search}%`) : [];
+=======
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
           p.category LIKE ? OR
           p.brand LIKE ? OR
           p.model_name LIKE ? OR
@@ -438,6 +454,10 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
+=======
+    // 5️⃣ Services (search across multiple fields + distance)
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
     // 🧰 Services — Added new searchable fields: labels, brand, features
     const serviceSQL = `
       SELECT s.*, vs.latitude, vs.longitude 
@@ -453,6 +473,10 @@ router.get('/customer/home', async (req, res) => {
       )` : ''}
       ORDER BY s.id DESC LIMIT 10
     `;
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
     const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
 
     const services = await new Promise((resolve, reject) => {
@@ -477,6 +501,10 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
+=======
+    // 6️⃣ Shops (search + distance)
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
     // 🏬 Shops
     const shopSQL = `
       SELECT id, vendor_id, shop_name, shop_image, address, latitude, longitude, gst_number, pan_number, owner_name, shop_document, additional_document 
@@ -485,6 +513,10 @@ router.get('/customer/home', async (req, res) => {
       ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
       ORDER BY id DESC LIMIT 10
     `;
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9bb9fb8eac40f3ba79b9e50a985e6bc3be9a46b9
     const shopParams = search ? Array(3).fill(`%${search}%`) : [];
 
     const shops = await new Promise((resolve, reject) => {
@@ -1239,6 +1271,7 @@ router.get('/customer/services', (req, res) => {
         p.selling_price, 
         p.images,
         vs.shop_name,
+        vs.vendor_id,
         vs.latitude AS shop_latitude,
         vs.longitude AS shop_longitude
       FROM cart c
