@@ -2,8 +2,56 @@ const express = require('express');
 const router = express.Router();
 const { Notification, NotificationTemplate,User } = require('../models'); 
 const authenticateToken = require("../middleware/auth");
+<<<<<<< HEAD
 
 
+=======
+const sendPushNotification = require("../utils/pushNotification");
+
+
+router.post("/send-notification", async (req, res) => {
+  try {
+    const { token, title, body, data } = req.body;
+
+    if (!token || !title || !body) {
+      return res.status(400).json({ error: "token, title, and body are required" });
+    }
+
+    const response = await sendPushNotification(token, title, body, data || {});
+    res.json({ message: "Notification sent", response });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/test-push", async (req, res) => {
+  try {
+    const { token, title, body } = req.body;
+
+    if (!token || !title || !body) {
+      return res.status(400).json({ error: "token, title, and body are required" });
+    }
+
+    const message = {
+      notification: { title, body },
+      token: token, // single device token
+    };
+
+    const response = await admin.messaging().send(message);
+    console.log("✅ Notification sent successfully:", response);
+
+    res.json({
+      success: true,
+      message: "Notification sent successfully",
+      response,
+    });
+  } catch (error) {
+    console.error("❌ Notification error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 router.get('/', authenticateToken, async (req, res) => {
     const userId = req.user.user_id; // Get user ID directly from the decoded token
 

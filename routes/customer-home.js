@@ -80,6 +80,7 @@ const crypto = require("crypto");
 
 //last one
 
+<<<<<<< HEAD
 // router.get('/customer/home', async (req, res) => {
 //   try {
 //     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
@@ -109,6 +110,34 @@ const crypto = require("crypto");
 //     });
 
 //     // 2. Get service categories
+=======
+
+
+// router.get('/customer/home', async (req, res) => {
+//   try {
+//     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+//     const search = req.query.search || null;
+//     const userLat = parseFloat(req.query.latitude);
+//     const userLng = parseFloat(req.query.longitude);
+
+//     const safeJsonParse = (str, fallback = []) => {
+//       if (!str) return fallback;
+//       try { return JSON.parse(str); } catch { return fallback; }
+//     };
+
+//     // 1️⃣ Product categories
+//     const categories = await new Promise((resolve, reject) => {
+//       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results.map(c => ({
+//           ...c,
+//           image: c.image ? `${baseUrl}/categories/${c.image}` : ''
+//         })));
+//       });
+//     });
+
+//     // 2️⃣ Service categories
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 //     const serviceCategories = await new Promise((resolve, reject) => {
 //       db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
 //         if (err) return reject(err);
@@ -116,6 +145,7 @@ const crypto = require("crypto");
 //       });
 //     });
 
+<<<<<<< HEAD
 //     // 3. Vendor banners (ads)
 //     const vendorBanners = await new Promise((resolve, reject) => {
 //       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
@@ -163,11 +193,86 @@ const crypto = require("crypto");
 //         if (err) return reject(err);
 //         resolve(
 //           results.map(s => ({
+=======
+//     // 3️⃣ Vendor banners
+//     const vendorBanners = await new Promise((resolve, reject) => {
+//       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results.map(ad => ({
+//           image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+//           image_link: ad.image_link
+//         })));
+//       });
+//     });
+
+//     // 4️⃣ Products (search across multiple fields + distance)
+//     const productSQL = `
+//       SELECT p.*, vs.latitude, vs.longitude 
+//       FROM products p
+//       LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+//       WHERE p.status = 'active'
+//       ${search ? `AND (
+//           p.name LIKE ? OR 
+//           p.description LIKE ? OR 
+//           p.category LIKE ?
+//       )` : ''}
+//       ORDER BY p.id DESC LIMIT 10
+//     `;
+//     const productParams = search ? Array(4).fill(`%${search}%`) : [];
+
+//     const products = await new Promise((resolve, reject) => {
+//       db.query(productSQL, productParams, (err, results) => {
+//         if (err) return reject(err);
+
+//         resolve(results.map(p => {
+//           const distance = (userLat && userLng && p.latitude && p.longitude)
+//             ? calculateDistance(userLat, userLng, p.latitude, p.longitude)
+//             : null;
+
+//           return {
+//             ...p,
+//             images: safeJsonParse(p.images, []).map(img => `${baseUrl}/products/${img}`),
+//             specifications: safeJsonParse(p.specifications, []),
+//             distance_in_km: distance
+//           };
+//         }));
+//       });
+//     });
+
+//     // 5️⃣ Services (search across multiple fields + distance)
+//     const serviceSQL = `
+//       SELECT s.*, vs.latitude, vs.longitude 
+//       FROM services s
+//       LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+//       WHERE 1=1
+//       ${search ? `AND (
+//         s.service_name LIKE ? OR 
+//         s.service_description LIKE ? OR 
+//         s.features LIKE ? OR 
+//         s.brands LIKE ? OR 
+//         s.labels LIKE ?
+//       )` : ''}
+//       ORDER BY s.id DESC LIMIT 10
+//     `;
+//     const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
+
+//     const services = await new Promise((resolve, reject) => {
+//       db.query(serviceSQL, serviceParams, (err, results) => {
+//         if (err) return reject(err);
+
+//         resolve(results.map(s => {
+//           const distance = (userLat && userLng && s.latitude && s.longitude)
+//             ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+//             : null;
+
+//           return {
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 //             ...s,
 //             gallery: safeJsonParse(s.gallery, []).map(img => `${baseUrl}/services/${img}`),
 //             brands: safeJsonParse(s.brands, []),
 //             features: safeJsonParse(s.features, []),
 //             exclusions: safeJsonParse(s.exclusions, []),
+<<<<<<< HEAD
 //             previous_work: safeJsonParse(s.previous_work, [])
 //           }))
 //         );
@@ -194,12 +299,52 @@ const crypto = require("crypto");
 //             additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : ''
 //           }))
 //         );
+=======
+//             previous_work: safeJsonParse(s.previous_work, []),
+//             distance_in_km: distance
+//           };
+//         }));
+//       });
+//     });
+
+//     // 6️⃣ Shops (search + distance)
+//     const shopSQL = `
+//       SELECT id, vendor_id, shop_name, shop_image, address, latitude, longitude, gst_number, pan_number, owner_name, shop_document, additional_document 
+//       FROM vendor_shops 
+//       WHERE 1=1 
+//       ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
+//       ORDER BY id DESC LIMIT 10
+//     `;
+//     const shopParams = search ? Array(3).fill(`%${search}%`) : [];
+
+//     const shops = await new Promise((resolve, reject) => {
+//       db.query(shopSQL, shopParams, (err, results) => {
+//         if (err) return reject(err);
+//         resolve(results.map(s => {
+//           const distance = (userLat && userLng && s.latitude && s.longitude)
+//             ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+//             : null;
+
+//           return {
+//             ...s,
+//             shop_image: s.shop_image ? `${baseUrl}/shops/${s.shop_image}` : '',
+//             shop_document: s.shop_document ? `${baseUrl}/vendor_shops/${s.shop_document}` : '',
+//             additional_document: s.additional_document ? `${baseUrl}/vendor_shops/${s.additional_document}` : '',
+//             distance_in_km: distance
+//           };
+//         }));
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 //       });
 //     });
 
 //     // ✅ Final Response
 //     res.json({
 //       search_query: search || '',
+<<<<<<< HEAD
+=======
+//       latitude: userLat,
+//       longitude: userLng,
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 //       categories,
 //       service_categories: serviceCategories,
 //       vendor_banners: vendorBanners,
@@ -207,11 +352,19 @@ const crypto = require("crypto");
 //       latest_services: services,
 //       shops
 //     });
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 //   } catch (error) {
 //     console.error('Home page error:', error);
 //     res.status(500).json({ error: 'Server error' });
 //   }
 // });
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 router.get('/customer/home', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
@@ -224,7 +377,11 @@ router.get('/customer/home', async (req, res) => {
       try { return JSON.parse(str); } catch { return fallback; }
     };
 
+<<<<<<< HEAD
     // 1️⃣ Product categories
+=======
+    // 📦 Product Categories
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const categories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name, image FROM categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
@@ -235,7 +392,11 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
     // 2️⃣ Service categories
+=======
+    // 🛠️ Service Categories
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const serviceCategories = await new Promise((resolve, reject) => {
       db.query('SELECT id, name FROM service_categories ORDER BY id DESC', (err, results) => {
         if (err) return reject(err);
@@ -243,7 +404,11 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
     // 3️⃣ Vendor banners
+=======
+    // 🏷️ Vendor Banners
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const vendorBanners = await new Promise((resolve, reject) => {
       db.query('SELECT image, image_link FROM vendor_ads ORDER BY id DESC LIMIT 10', (err, results) => {
         if (err) return reject(err);
@@ -254,7 +419,11 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
     // 4️⃣ Products (search across multiple fields + distance)
+=======
+    // 🛒 Products — Added new searchable fields: brand, model_name, color, specifications
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const productSQL = `
       SELECT p.*, vs.latitude, vs.longitude 
       FROM products p
@@ -263,11 +432,24 @@ router.get('/customer/home', async (req, res) => {
       ${search ? `AND (
           p.name LIKE ? OR 
           p.description LIKE ? OR 
+<<<<<<< HEAD
           p.category LIKE ?
       )` : ''}
       ORDER BY p.id DESC LIMIT 10
     `;
     const productParams = search ? Array(4).fill(`%${search}%`) : [];
+=======
+          p.category LIKE ? OR
+          p.brand LIKE ? OR
+          p.model_name LIKE ? OR
+          p.color LIKE ? OR
+          p.specifications LIKE ?
+      )` : ''}
+      ORDER BY p.id DESC LIMIT 10
+    `;
+
+    const productParams = search ? Array(7).fill(`%${search}%`) : [];
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 
     const products = await new Promise((resolve, reject) => {
       db.query(productSQL, productParams, (err, results) => {
@@ -288,7 +470,11 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
     // 5️⃣ Services (search across multiple fields + distance)
+=======
+    // 🧰 Services — Added new searchable fields: labels, brand, features
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const serviceSQL = `
       SELECT s.*, vs.latitude, vs.longitude 
       FROM services s
@@ -303,6 +489,10 @@ router.get('/customer/home', async (req, res) => {
       )` : ''}
       ORDER BY s.id DESC LIMIT 10
     `;
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
 
     const services = await new Promise((resolve, reject) => {
@@ -327,7 +517,11 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+<<<<<<< HEAD
     // 6️⃣ Shops (search + distance)
+=======
+    // 🏬 Shops
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const shopSQL = `
       SELECT id, vendor_id, shop_name, shop_image, address, latitude, longitude, gst_number, pan_number, owner_name, shop_document, additional_document 
       FROM vendor_shops 
@@ -335,6 +529,10 @@ router.get('/customer/home', async (req, res) => {
       ${search ? 'AND (shop_name LIKE ? OR address LIKE ? OR owner_name LIKE ?)' : ''}
       ORDER BY id DESC LIMIT 10
     `;
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
     const shopParams = search ? Array(3).fill(`%${search}%`) : [];
 
     const shops = await new Promise((resolve, reject) => {

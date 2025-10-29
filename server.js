@@ -142,7 +142,13 @@ const customerHomeRoutes = require('./routes/customer-home');
 const deliveryHomeRoutes = require('./routes/delivery-home');
 const deliveryAuthRoutes = require('./routes/delivery-auth');
 const translateRoute = require("./routes/translate");
+<<<<<<< HEAD
 
+=======
+const notificationRoutes = require('./routes/notifications');
+
+app.use('/api', notificationRoutes);
+>>>>>>> 1582047934a7f841e936b0f5211da749f7885217
 app.use("/translate", translateRoute);
 app.use('/admin', userAdminDashboardRoutes);
 app.use('/admin', productRoutes);
