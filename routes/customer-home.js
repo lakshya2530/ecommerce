@@ -289,21 +289,22 @@ router.get('/customer/home', async (req, res) => {
 
     // 🛒 Products — Added new searchable fields: brand, model_name, color, specifications
     const productSQL = `
-      SELECT p.*, vs.latitude, vs.longitude 
-      FROM products p
-      LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
-      WHERE p.status = 'active'
-      ${search ? `AND (
-          p.name LIKE ? OR 
-          p.description LIKE ? OR 
-          p.category LIKE ? OR
-          p.brand LIKE ? OR
-          p.model_name LIKE ? OR
-          p.color LIKE ? OR
-          p.specifications LIKE ?
-      )` : ''}
-      ORDER BY p.id DESC LIMIT 10
-    `;
+    SELECT p.*, vs.latitude, vs.longitude 
+    FROM products p
+    LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+    WHERE p.status = 'active'
+    ${search ? `AND (
+        p.name LIKE ? OR 
+        p.description LIKE ? OR 
+        p.category LIKE ? OR
+        p.brand LIKE ? OR
+        p.model_name LIKE ? OR
+        p.color LIKE ? OR
+        p.specifications LIKE ?
+    )` : ''}
+    ORDER BY p.id DESC LIMIT 10
+  `;
+  
 
     const productParams = search ? Array(7).fill(`%${search}%`) : [];
 
@@ -1129,6 +1130,7 @@ router.get('/customer/services', (req, res) => {
         p.selling_price, 
         p.images,
         vs.shop_name,
+        vs.vendor_id,
         vs.latitude AS shop_latitude,
         vs.longitude AS shop_longitude
       FROM cart c
