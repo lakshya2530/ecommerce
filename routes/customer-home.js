@@ -1129,7 +1129,7 @@ router.get('/customer/services', (req, res) => {
         p.selling_price, 
         p.images,
         vs.shop_name,
-        vs.vendor_id,
+        p.vendor_id,
         vs.latitude AS shop_latitude,
         vs.longitude AS shop_longitude
       FROM cart c
