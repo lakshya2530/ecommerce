@@ -328,7 +328,6 @@ router.get('/customer/home', async (req, res) => {
         p.name LIKE ? OR 
         p.description LIKE ? OR 
         p.category LIKE ? OR
-        p.brand LIKE ? OR
         p.model_name LIKE ? OR
         p.color LIKE ? OR
         p.specifications LIKE ?
