@@ -211,7 +211,11 @@ router.post("/register-customer", (req, res) => {
 
 // ✅ Login
 router.post("/customer-login", (req, res) => {
-  const { identifier, password } = req.body;
+  const { identifier, password, device_id, device_type } = req.body;
+
+  if (!identifier || !password) {
+    return res.status(400).json({ error: "Identifier and password are required" });
+  }
 
   const sql = "SELECT * FROM users WHERE email = ? OR phone = ?";
   db.query(sql, [identifier, identifier], (err, results) => {
@@ -221,27 +225,39 @@ router.post("/customer-login", (req, res) => {
     const user = results[0];
 
     bcrypt.compare(password, user.password, (compareErr, isMatch) => {
-      if (compareErr || !isMatch) return res.status(401).json({ error: "Invalid credentials" });
+      if (compareErr || !isMatch)
+        return res.status(401).json({ error: "Invalid credentials" });
 
+      // ✅ Generate JWT token
       const token = jwt.sign(
         { id: user.id, email: user.email, user_type: user.user_type },
         process.env.JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: "7d" }
       );
 
-        delete user.password; // remove password from response
-
-        res.json({
-          message: "Login successful",
-          token,
-          user: {
-            ...user
-          }
+      // ✅ Update device info if provided
+      if (device_id && device_type) {
+        const updateSql = "UPDATE users SET device_id = ?, device_type = ? WHERE id = ?";
+        db.query(updateSql, [device_id, device_type, user.id], (updateErr) => {
+          if (updateErr) console.error("Device update error:", updateErr);
         });
-    
+      }
+
+      delete user.password; // remove password from response
+
+      res.json({
+        message: "Login successful",
+        token,
+        user: {
+          ...user,
+          device_id: device_id || user.device_id,
+          device_type: device_type || user.device_type,
+        },
+      });
     });
   });
 });
+
 
 router.post('/forgot-password', (req, res) => {
   const { identifier } = req.body; // email or phone

@@ -350,7 +350,7 @@ router.post("/create-shop", (req, res) => {
 
 // [8] Vendor Login
 router.post("/vendor-login", (req, res) => {
-  const { identifier, password } = req.body;
+  const { identifier, password,device_id, device_type } = req.body;
 
   const sql = "SELECT * FROM users WHERE email = ? OR phone = ?";
   db.query(sql, [identifier, identifier], (err, results) => {
@@ -368,6 +368,9 @@ router.post("/vendor-login", (req, res) => {
         { expiresIn: '7d' }
       );
 
+        // ✅ Update device info if provided
+       
+
       const shopSQL = "SELECT * FROM vendor_shops WHERE vendor_id = ?";
       db.query(shopSQL, [user.id], (shopErr, shopResults) => {
         if (shopErr) return res.status(500).json({ error: "Shop check failed" });
@@ -375,6 +378,12 @@ router.post("/vendor-login", (req, res) => {
         const has_shop = shopResults.length > 0;
         const shop = has_shop ? shopResults[0] : null;
 
+        if (device_id && device_type) {
+          const updateSql = "UPDATE users SET device_id = ?, device_type = ? WHERE id = ?";
+          db.query(updateSql, [device_id, device_type, user.id], (updateErr) => {
+            if (updateErr) console.error("Device update error:", updateErr);
+          });
+        }
         delete user.password; // remove password from response
 
         res.json({
@@ -382,6 +391,8 @@ router.post("/vendor-login", (req, res) => {
           token,
           user: {
             ...user,
+            device_id: device_id || user.device_id,
+            device_type: device_type || user.device_type,
             has_shop,
             shop
           }
