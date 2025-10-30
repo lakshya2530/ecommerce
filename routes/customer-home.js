@@ -1189,6 +1189,7 @@ router.get('/customer/services', (req, res) => {
           name: item.name,
           quantity: item.quantity,
           selling_price: item.selling_price,
+          vendor_id: item.vendor_id,
           amount,
           images,
           shop_name: item.shop_name || '',
