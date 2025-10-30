@@ -361,7 +361,6 @@ router.get('/customer/home', async (req, res) => {
       SELECT s.*, vs.latitude, vs.longitude 
       FROM services s
       LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
-      WHERE s.status = 'active'
       ${search ? `AND (
         s.service_name LIKE ? OR 
         s.service_description LIKE ? OR 
