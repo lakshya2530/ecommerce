@@ -410,6 +410,8 @@ router.get('/customer/home', async (req, res) => {
     });
 
   } catch (error) {
+    console.error("❌ SQL Error in Products:", error.sqlMessage || error);
+    return reject(error);
     console.error('Home page error:', error);
     res.status(500).json({ error: 'Server error' });
   }
