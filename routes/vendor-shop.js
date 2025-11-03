@@ -476,6 +476,49 @@ router.get('/vendor/shop', authenticate, (req, res) => {
 // });
 
 
+// router.get('/vendor-orders', authenticate, (req, res) => {
+//   const vendor_id = req.user.id;
+//   const { status } = req.query; // optional query param: ?status=pending
+
+//   let sql = `
+//     SELECT 
+//       o.*, 
+//       o.id AS order_id, 
+//       oi.price AS order_price, 
+//       p.name AS product_name, 
+//       c.full_name AS customer_name,
+//       dp.full_name AS delivery_partner_name,
+//       dp.phone AS delivery_partner_phone
+//     FROM orders o
+//     JOIN order_items oi ON o.id = oi.order_id
+//     JOIN products p ON o.product_id = p.id
+//     JOIN users c ON o.customer_id = c.id
+//     LEFT JOIN users dp ON o.assigned_to = dp.id
+//     WHERE p.vendor_id = ?
+//   `;
+
+//   const params = [vendor_id];
+
+//   // Add optional filter by status
+//   if (status) {
+//     sql += ` AND o.status = ?`;
+//     params.push(status);
+//   }
+
+//   sql += ` ORDER BY o.id DESC`;
+
+//   db.query(sql, params, (err, results) => {
+//     if (err) return res.status(500).json({ error: err.message });
+
+//     res.json({
+//       status: true,
+//       total: results.length,
+//       orders: results
+//     });
+//   });
+// });
+
+
 router.get('/vendor-orders', authenticate, (req, res) => {
   const vendor_id = req.user.id;
   const { status } = req.query; // optional query param: ?status=pending
@@ -488,12 +531,17 @@ router.get('/vendor-orders', authenticate, (req, res) => {
       p.name AS product_name, 
       c.full_name AS customer_name,
       dp.full_name AS delivery_partner_name,
-      dp.phone AS delivery_partner_phone
+      dp.phone AS delivery_partner_phone,
+      vs.latitude AS shop_lat,
+      vs.longitude AS shop_long,
+      o.customer_latitude AS customer_lat,
+      o.customer_longitude AS customer_long
     FROM orders o
     JOIN order_items oi ON o.id = oi.order_id
     JOIN products p ON o.product_id = p.id
     JOIN users c ON o.customer_id = c.id
     LEFT JOIN users dp ON o.assigned_to = dp.id
+    LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
     WHERE p.vendor_id = ?
   `;
 
@@ -510,15 +558,55 @@ router.get('/vendor-orders', authenticate, (req, res) => {
   db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
 
+    // ✅ Distance calculation function
+    function haversine(lat1, lon1, lat2, lon2) {
+      function toRad(x) {
+        return (x * Math.PI) / 180;
+      }
+      const R = 6371; // Earth radius in km
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) *
+          Math.cos(toRad(lat2)) *
+          Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c; // distance in km
+    }
+
+    // ✅ Add delivery_option logic for each order
+    const formattedOrders = results.map(order => {
+      const shopLat = parseFloat(order.shop_lat);
+      const shopLng = parseFloat(order.shop_long);
+      const custLat = parseFloat(order.customer_lat);
+      const custLng = parseFloat(order.customer_long);
+
+      let delivery_option = null;
+
+      if (
+        !isNaN(shopLat) &&
+        !isNaN(shopLng) &&
+        !isNaN(custLat) &&
+        !isNaN(custLng)
+      ) {
+        const distance = haversine(shopLat, shopLng, custLat, custLng);
+        delivery_option = distance <= 50 ? 'assign_to_partner' : 'ship_api';
+      }
+
+      return {
+        ...order,
+        delivery_option
+      };
+    });
+
     res.json({
       status: true,
-      total: results.length,
-      orders: results
+      total: formattedOrders.length,
+      orders: formattedOrders
     });
   });
 });
-
-
 
   router.get('/vendor-orders/:order_id', authenticate, (req, res) => {
     const vendor_id = req.user.id;

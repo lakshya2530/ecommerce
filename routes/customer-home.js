@@ -356,19 +356,33 @@ router.get('/customer/home', async (req, res) => {
     });
 
     // 🧰 Services
+    // const serviceSQL = `
+    //   SELECT s.*, vs.latitude, vs.longitude 
+    //   FROM services s
+    //   LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+    //   ${search ? `AND (
+    //     s.service_name LIKE ? OR 
+    //     s.service_description LIKE ? OR 
+    //     s.features LIKE ? OR 
+    //     s.brands LIKE ? OR 
+    //     s.labels LIKE ?
+    //   )` : ''}
+    //   ORDER BY s.id DESC LIMIT 10
+    // `;
     const serviceSQL = `
-      SELECT s.*, vs.latitude, vs.longitude 
-      FROM services s
-      LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
-      ${search ? `AND (
-        s.service_name LIKE ? OR 
-        s.service_description LIKE ? OR 
-        s.features LIKE ? OR 
-        s.brands LIKE ? OR 
-        s.labels LIKE ?
-      )` : ''}
-      ORDER BY s.id DESC LIMIT 10
-    `;
+  SELECT s.*, vs.latitude, vs.longitude 
+  FROM services s
+  LEFT JOIN vendor_shops vs ON s.vendor_id = vs.vendor_id
+  WHERE 1=1
+  ${search ? `AND (
+    s.service_name LIKE ? OR 
+    s.service_description LIKE ? OR 
+    JSON_SEARCH(s.features, 'one', ?) IS NOT NULL OR
+    JSON_SEARCH(s.brands, 'one', ?) IS NOT NULL OR
+    JSON_SEARCH(s.labels, 'one', ?) IS NOT NULL
+  )` : ''}
+  ORDER BY s.id DESC LIMIT 10
+`;
     const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
 
     const services = await new Promise((resolve, reject) => {
