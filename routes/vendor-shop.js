@@ -624,6 +624,7 @@ router.get('/vendor-orders/:order_id', authenticate, async (req, res) => {
       c.phone AS customer_mobile, 
       o.customer_latitude AS customer_lat,
       o.customer_longitude AS customer_long,
+      o.awb_number, o.shipment_name, o.shipment_label,
       s.id AS shop_id,
       s.latitude AS shop_lat,
       s.longitude AS shop_long,

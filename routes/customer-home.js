@@ -1699,6 +1699,7 @@ router.get('/customer/services', (req, res) => {
     const sql = `
       SELECT 
         o.order_number, o.id AS order_id, o.status AS order_status, 
+        o.awb_number, o.shipment_name, o.shipment_label,
         o.order_date, o.customer_id, o.vendor_id, o.assigned_to, 
         oi.price, oi.quantity, oi.product_id,
         p.name AS product_name, p.description AS product_description,
