@@ -1750,6 +1750,9 @@ router.get('/customer/services', (req, res) => {
         order_number: results[0].order_number,
         status: results[0].order_status,
         order_date: results[0].order_date,
+        awb_number: results[0].awb_number,
+        shipment_name: results[0].shipment_name,
+        shipment_label: results[0].shipment_label,
         vendor: {
           vendor_id: results[0].vendor_id,
           vendor_name: results[0].vendor_name,
@@ -1763,7 +1766,7 @@ router.get('/customer/services', (req, res) => {
       const invoiceData = {
         order_number: orderDetail.order_number,
         order_date: orderDetail.order_date,
-        customer_name: req.user.full_name || 'Customer',
+        customer_name: req.user.name || 'Customer',
         vendor_name: orderDetail.vendor.vendor_name,
         total: totalAmount,
         items: orderItems
