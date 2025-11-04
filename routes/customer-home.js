@@ -1785,8 +1785,11 @@ router.get('/customer/services', (req, res) => {
         console.error("Invoice generation failed:", err);
         orderDetail.invoice_url = null; // fallback if failed
       }
-  
-      res.json(orderDetail);
+      res.json({
+        ...orderDetail,
+        invoice_url: `${req.protocol}://${req.get('host')}${invoicePath}`
+      });
+      // res.json(orderDetail);
   
     } catch (err) {
       console.error("Customer Order Fetch Error:", err);
