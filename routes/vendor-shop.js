@@ -652,6 +652,7 @@ router.get('/vendor-orders/:order_id', authenticate, async (req, res) => {
       order_date: results[0].order_date,
       customer_lat: results[0].customer_lat,
       customer_long: results[0].customer_long,
+      customer_name: results[0].customer_name,
       shop_lat: results[0].shop_lat,
       shop_long: results[0].shop_long,
       delivery_option: null,
