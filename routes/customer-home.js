@@ -8,6 +8,7 @@ const admin = require("../config/firebase"); // make sure Firebase Admin SDK is 
 const pdf = require('html-pdf');
 const fs = require('fs');
 const path = require('path');
+const { generateInvoice } = require('../utils/invoiceGenerator'); // ✅ Add this import
 
 // router.get('/customer/home', async (req, res) => {
 //   try {
@@ -1690,215 +1691,99 @@ router.get('/customer/services', (req, res) => {
   //   });
   // });
 
-  router.get('/customer-orders', authenticate, (req, res) => {
+  router.get('/customer-orders/:order_id', authenticate, async (req, res) => {
     const customer_id = req.user.id;
-    const { status } = req.query; // optional ?status=pending
+    const { order_id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
   
-    let sql = `
+    const sql = `
       SELECT 
-        o.order_number,
-        o.id AS order_id,
-        o.status AS order_status,
-        o.order_date,
-        o.product_id,
-        o.customer_id,
-        o.vendor_id,
-        o.assigned_to,
-        ot.price,
-        p.name AS product_name,
-        p.images,
-        p.category,
-        u.full_name AS vendor_name,
-        dp.full_name AS delivery_partner_name,
-        dp.phone AS delivery_partner_phone
+        o.order_number, o.id AS order_id, o.status AS order_status, 
+        o.order_date, o.customer_id, o.vendor_id, o.assigned_to, 
+        oi.price, oi.quantity, oi.product_id,
+        p.name AS product_name, p.description AS product_description,
+        p.images, p.category, 
+        u.full_name AS vendor_name, u.phone AS vendor_mobile
       FROM orders o
-      JOIN order_items ot ON o.id = ot.order_id
-      JOIN products p ON o.product_id = p.id
+      JOIN order_items oi ON o.id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
       JOIN users u ON o.vendor_id = u.id
-      LEFT JOIN users dp ON o.assigned_to = dp.id
-      WHERE o.customer_id = ?
+      WHERE o.id = ? AND o.customer_id = ?
     `;
   
-    const params = [customer_id];
+    try {
+      const [results] = await db.promise().query(sql, [order_id, customer_id]);
   
-    // Apply optional status filter
-    if (status) {
-      sql += ` AND o.status = ?`;
-      params.push(status);
-    }
+      if (!results.length) {
+        return res.status(404).json({ error: "Order not found" });
+      }
   
-    sql += ` ORDER BY o.order_date DESC`;
-  
-    db.query(sql, params, (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
-  
-      const formattedOrders = results.map(order => {
+      // Format product images
+      const orderItems = results.map(item => {
         let images = [];
         try {
-          const parsed = JSON.parse(order.images || '[]');
-          images = parsed.map(img => `${baseUrl}/products/${img}`);
-        } catch {
-          images = [];
-        }
+          images = JSON.parse(item.images || '[]').map(
+            img => `${baseUrl}/products/${img}`
+          );
+        } catch { /* ignore parse errors */ }
   
         return {
-          ...order,
-          images,
-          vendor_name: order.vendor_name,
-          delivery_partner_name: order.delivery_partner_name,
-          delivery_partner_phone: order.delivery_partner_phone
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_description: item.product_description,
+          price: item.price,
+          quantity: item.quantity,
+          category: item.category,
+          images
         };
       });
   
-      res.json({
-        status: true,
-        total: formattedOrders.length,
-        orders: formattedOrders
-      });
-    });
-  });
+      // Calculate total amount
+      const totalAmount = orderItems.reduce(
+        (sum, item) => sum + item.price * item.quantity, 0
+      );
   
-  function safeJsonParse(str, fallback = []) {
-    if (!str) return fallback;
-    try { return JSON.parse(str); } catch (e) { return fallback; }
-  }
-router.get('/customer-orders/:order_id', authenticate, (req, res) => {
-  const customer_id = req.user.id;
-  const { order_id } = req.params;
-  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
-
-  const sql = `
-    SELECT 
-      o.order_number, o.id AS order_id, o.status AS order_status, 
-      o.order_date, o.customer_id, o.vendor_id, o.assigned_to, 
-      oi.price, oi.quantity, oi.product_id,
-      p.name AS product_name, p.description AS product_description,
-      p.images, p.category,
-      u.full_name AS vendor_name, u.phone AS vendor_mobile, u.email AS vendor_email,
-      vs.shop_name, vs.shop_image
-    FROM orders o
-    JOIN order_items oi ON o.id = oi.order_id
-    JOIN products p ON oi.product_id = p.id
-    JOIN users u ON o.vendor_id = u.id
-    LEFT JOIN vendor_shops vs ON u.id = vs.vendor_id
-    WHERE o.id = ? AND o.customer_id = ?
-  `;
-
-  db.query(sql, [order_id, customer_id], (err, results) => {
-    if (err) {
-      console.error('Order SQL error:', err);
-      return res.status(500).json({ error: err.message });
-    }
-    if (!results.length) return res.status(404).json({ error: "Order not found" });
-
-    const order = results[0];
-
-    // Build items array
-    const items = results.map(r => ({
-      product_id: r.product_id,
-      product_name: r.product_name,
-      category: r.category || '',
-      price: parseFloat(r.price) || 0,
-      quantity: parseInt(r.quantity) || 0,
-      images: safeJsonParse(r.images, []).map(i => `${baseUrl}/products/${i}`)
-    }));
-
-    const grandTotal = items.reduce((s, it) => s + (it.price * it.quantity), 0);
-
-    // Read HTML template
-    const tplPath = path.join(__dirname, '..', 'templates', 'invoice.html');
-    let tpl = fs.readFileSync(tplPath, 'utf8');
-
-    // Build ITEM_ROWS HTML
-    const itemRowsHtml = items.map(it => `
-      <tr>
-        <td>${escapeHtml(it.product_name)}</td>
-        <td>${escapeHtml(it.category || '')}</td>
-        <td class="right">${it.quantity}</td>
-        <td class="right">₹${it.price.toFixed(2)}</td>
-        <td class="right">₹${(it.price * it.quantity).toFixed(2)}</td>
-      </tr>
-    `).join('');
-
-    // fill placeholders
-    tpl = tpl.replace(/{{ORDER_NUMBER}}/g, escapeHtml(order.order_number || `ORD${order.order_id}`));
-    tpl = tpl.replace(/{{ORDER_DATE}}/g, new Date(order.order_date).toLocaleString());
-    tpl = tpl.replace(/{{CUSTOMER_ID}}/g, String(order.customer_id));
-    tpl = tpl.replace(/{{CUSTOMER_NAME}}/g, escapeHtml(req.user.full_name || ''));
-    tpl = tpl.replace(/{{CUSTOMER_PHONE}}/g, escapeHtml(req.user.phone || ''));
-    tpl = tpl.replace(/{{CUSTOMER_ADDRESS}}/g, escapeHtml(order.customer_address || ''));
-
-    tpl = tpl.replace(/{{VENDOR_NAME}}/g, escapeHtml(order.vendor_name || ''));
-    tpl = tpl.replace(/{{VENDOR_PHONE}}/g, escapeHtml(order.vendor_mobile || ''));
-    tpl = tpl.replace(/{{VENDOR_EMAIL}}/g, escapeHtml(order.vendor_email || ''));
-    tpl = tpl.replace(/{{SHOP_NAME}}/g, escapeHtml(order.shop_name || ''));
-
-    // vendor logo full URL (if shop_image exists)
-    const vendorLogoUrl = order.shop_image ? `${baseUrl}/shops/${order.shop_image}` : '';
-    tpl = tpl.replace(/{{VENDOR_LOGO}}/g, vendorLogoUrl);
-
-    tpl = tpl.replace(/{{ITEM_ROWS}}/g, itemRowsHtml);
-    tpl = tpl.replace(/{{GRAND_TOTAL}}/g, grandTotal.toFixed(2));
-    tpl = tpl.replace(/{{PAYMENT_STATUS}}/g, escapeHtml(order.order_status || ''));
-
-    // Ensure invoices folder exists
-    const invoiceDir = path.join(__dirname, '..', 'uploads', 'invoices');
-    if (!fs.existsSync(invoiceDir)) fs.mkdirSync(invoiceDir, { recursive: true });
-
-    const invoiceFilename = `invoice_${order.order_id}.pdf`;
-    const invoicePath = path.join(invoiceDir, invoiceFilename);
-    const invoiceUrl = `${baseUrl}/invoices/${invoiceFilename}`;
-
-    // Generate PDF only when not present (or you can always regenerate)
-    if (fs.existsSync(invoicePath)) {
-      return res.json({
-        ...buildOrderResponse(order, items, grandTotal),
-        invoice_url: invoiceUrl
-      });
-    }
-
-    // pdf.create options (adjust paper size if needed)
-    const options = { format: 'A4', orientation: 'portrait', border: '10mm' };
-
-    pdf.create(tpl, options).toFile(invoicePath, (pdfErr) => {
-      if (pdfErr) {
-        console.error('PDF generation error:', pdfErr);
-        return res.status(500).json({ error: 'Invoice generation failed' });
+      // Build order object
+      const orderDetail = {
+        order_id: results[0].order_id,
+        order_number: results[0].order_number,
+        status: results[0].order_status,
+        order_date: results[0].order_date,
+        vendor: {
+          vendor_id: results[0].vendor_id,
+          vendor_name: results[0].vendor_name,
+          vendor_mobile: results[0].vendor_mobile
+        },
+        items: orderItems,
+        total_amount: totalAmount
+      };
+  
+      // ✅ Step 1: Prepare invoice data
+      const invoiceData = {
+        order_number: orderDetail.order_number,
+        order_date: orderDetail.order_date,
+        customer_name: req.user.full_name || 'Customer',
+        vendor_name: orderDetail.vendor.vendor_name,
+        total: totalAmount,
+        items: orderItems
+      };
+  
+      // ✅ Step 2: Generate invoice PDF
+      try {
+        const invoicePath = await generateInvoice(invoiceData);
+        orderDetail.invoice_url = `${req.protocol}://${req.get('host')}${invoicePath}`;
+      } catch (err) {
+        console.error("Invoice generation failed:", err);
+        orderDetail.invoice_url = null; // fallback if failed
       }
-
-      // respond with order details + invoice URL
-      res.json({
-        ...buildOrderResponse(order, items, grandTotal),
-        invoice_url: invoiceUrl
-      });
-    });
+  
+      res.json(orderDetail);
+  
+    } catch (err) {
+      console.error("Customer Order Fetch Error:", err);
+      res.status(500).json({ error: "Server error" });
+    }
   });
-});
-
-// small helpers
-function escapeHtml(text = '') {
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function buildOrderResponse(order, items, grandTotal) {
-  return {
-    order_id: order.order_id,
-    order_number: order.order_number,
-    status: order.order_status,
-    order_date: order.order_date,
-    vendor: {
-      vendor_id: order.vendor_id,
-      vendor_name: order.vendor_name,
-      vendor_mobile: order.vendor_mobile
-    },
-    items,
-    grand_total: grandTotal
-  };
-}
 
   // router.get('/customer-orders/:order_id', authenticate, (req, res) => {
   //   const customer_id = req.user.id;
