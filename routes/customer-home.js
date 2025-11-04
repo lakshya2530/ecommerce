@@ -1769,22 +1769,31 @@ router.get('/customer/services', (req, res) => {
       };
   
       // ✅ Step 2: Generate invoice PDF
-      try {
-        // const invoicePath = await generateInvoice(invoiceData);
-        const invoicePath = await generateInvoice({
-          order_number: orderDetail.order_number,
-          order_date: orderDetail.order_date,
-          customer_name: "John Doe",
-          customer_address: "123 Wellness Street, Mumbai",
-          vendor_name: orderDetail.vendor.vendor_name,
-          vendor_phone: orderDetail.vendor.vendor_mobile,
-          items: orderDetail.items
-        });
-        orderDetail.invoice_url = `${req.protocol}://${req.get('host')}${invoicePath}`;
-      } catch (err) {
-        console.error("Invoice generation failed:", err);
-        orderDetail.invoice_url = null; // fallback if failed
-      }
+      // try {
+      //   // const invoicePath = await generateInvoice(invoiceData);
+      //   const invoicePath = await generateInvoice({
+      //     order_number: orderDetail.order_number,
+      //     order_date: orderDetail.order_date,
+      //     customer_name: "John Doe",
+      //     customer_address: "123 Wellness Street, Mumbai",
+      //     vendor_name: orderDetail.vendor.vendor_name,
+      //     vendor_phone: orderDetail.vendor.vendor_mobile,
+      //     items: orderDetail.items
+      //   });
+      //   orderDetail.invoice_url = `${req.protocol}://${req.get('host')}${invoicePath}`;
+      // } catch (err) {
+      //   console.error("Invoice generation failed:", err);
+      //   orderDetail.invoice_url = null; // fallback if failed
+      // }
+      const invoicePath = await generateInvoice({
+        order_number: orderDetail.order_number,
+        order_date: orderDetail.order_date,
+        customer_name: "John Doe",
+        customer_address: "123 Wellness Street, Mumbai",
+        vendor_name: orderDetail.vendor.vendor_name,
+        vendor_phone: orderDetail.vendor.vendor_mobile,
+        items: orderDetail.items
+      });
       res.json({
         ...orderDetail,
         invoice_url: `${req.protocol}://${req.get('host')}${invoicePath}`
