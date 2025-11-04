@@ -7,6 +7,7 @@ const authenticate = require('../middleware/auth');
 const razorpay = require("../config/razorpay"); // import config
 const crypto = require("crypto");
 const uploadService = require('../middleware/upload-service');
+const { generateInvoice } = require('../utils/invoiceGenerator');
 
 // 🔧 Multer setup
 const storage = multer.diskStorage({
@@ -608,110 +609,207 @@ router.get('/vendor-orders', authenticate, (req, res) => {
   });
 });
 
-  router.get('/vendor-orders/:order_id', authenticate, (req, res) => {
-    const vendor_id = req.user.id;
-    const { order_id } = req.params;
-  
-    const sql = `
-      SELECT 
-        o.id AS order_id, 
-        o.order_number, 
-        o.status, 
-        o.order_date, 
-        c.id AS customer_id, 
-        c.full_name AS customer_name, 
-        c.phone AS customer_mobile, 
-        o.customer_latitude AS customer_lat,
-        o.customer_longitude AS customer_long,
-        s.id AS shop_id,
-        s.latitude AS shop_lat,
-        s.longitude AS shop_long,
-        oi.id AS item_id, 
-        oi.quantity, 
-        oi.price, 
-        p.id AS product_id, 
-        p.name AS product_name, 
-        p.images
-      FROM orders o
-      JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id
-      JOIN users c ON o.customer_id = c.id
-      JOIN vendor_shops s ON oi.vendor_id = s.vendor_id
-      WHERE o.id = ? AND oi.vendor_id = ?
-    `;
-  
-    db.query(sql, [order_id, vendor_id], (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (results.length === 0) return res.status(404).json({ error: "Order not found" });
-  
-      const orderInfo = {
-        order_id: results[0].order_id,
-        order_number: results[0].order_number,
-        status: results[0].status,
-        order_date: results[0].order_date,
-        customer_lat: results[0].customer_lat,
-        customer_long: results[0].customer_long,
-        shop_lat: results[0].shop_lat,
-        shop_long: results[0].shop_long,
-        delivery_option: null, // 👈 default
-        customer: {
-          id: results[0].customer_id,
-          name: results[0].customer_name,
-          mobile: results[0].customer_mobile
-        },
-        items: results.map(r => ({
-          item_id: r.item_id,
-          product_id: r.product_id,
-          product_name: r.product_name,
-          quantity: r.quantity,
-          price: r.price,
-          images: (() => {
-            try {
-              return JSON.parse(r.images || '[]');
-            } catch (e) {
-              return [];
-            }
-          })()
-        }))
-      };
-  
-      // ✅ distance calc
-      const shopLat = parseFloat(results[0].shop_lat);
-      const shopLng = parseFloat(results[0].shop_long);
-      const custLat = parseFloat(results[0].customer_lat);
-      const custLng = parseFloat(results[0].customer_long);
+router.get('/vendor-orders/:order_id', authenticate, async (req, res) => {
+  const vendor_id = req.user.id;
+  const { order_id } = req.params;
 
-      function haversine(lat1, lon1, lat2, lon2) {
-        function toRad(x) {
-          return (x * Math.PI) / 180;
-        }
-      
-        const R = 6371; // Earth radius in km
-        const dLat = toRad(lat2 - lat1);
-        const dLon = toRad(lon2 - lon1);
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(toRad(lat1)) *
-            Math.cos(toRad(lat2)) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
-      
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c; // distance in km
-      }
-      
-  
-      const distance = haversine(shopLat, shopLng, custLat, custLng);
-  
-      if (distance <= 50) {
-        orderInfo.delivery_option = "assign_to_partner"; // vendor will click assign
-      } else {
-        orderInfo.delivery_option = "ship_api"; // auto-ship
-      }
-  
-      res.json(orderInfo);
-    });
+  const sql = `
+    SELECT 
+      o.id AS order_id, 
+      o.order_number, 
+      o.status, 
+      o.order_date, 
+      c.id AS customer_id, 
+      c.full_name AS customer_name, 
+      c.phone AS customer_mobile, 
+      o.customer_latitude AS customer_lat,
+      o.customer_longitude AS customer_long,
+      s.id AS shop_id,
+      s.latitude AS shop_lat,
+      s.longitude AS shop_long,
+      oi.id AS item_id, 
+      oi.quantity, 
+      oi.price, 
+      p.id AS product_id, 
+      p.name AS product_name, 
+      p.images
+    FROM orders o
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    JOIN users c ON o.customer_id = c.id
+    JOIN vendor_shops s ON oi.vendor_id = s.vendor_id
+    WHERE o.id = ? AND oi.vendor_id = ?
+  `;
+
+  db.query(sql, [order_id, vendor_id], async (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!results.length) return res.status(404).json({ error: "Order not found" });
+
+    const orderInfo = {
+      order_id: results[0].order_id,
+      order_number: results[0].order_number,
+      status: results[0].status,
+      order_date: results[0].order_date,
+      customer_lat: results[0].customer_lat,
+      customer_long: results[0].customer_long,
+      shop_lat: results[0].shop_lat,
+      shop_long: results[0].shop_long,
+      delivery_option: null,
+      customer: {
+        id: results[0].customer_id,
+        name: results[0].customer_name,
+        mobile: results[0].customer_mobile
+      },
+      vendor_name: req.user.full_name || "Vendor",
+      items: results.map(r => ({
+        item_id: r.item_id,
+        product_id: r.product_id,
+        product_name: r.product_name,
+        quantity: r.quantity,
+        price: r.price,
+        images: (() => {
+          try {
+            return JSON.parse(r.images || '[]');
+          } catch {
+            return [];
+          }
+        })()
+      }))
+    };
+
+    orderInfo.total = orderInfo.items.reduce((sum, i) => sum + i.quantity * i.price, 0);
+
+    // Distance check
+    const distance = (() => {
+      const toRad = x => (x * Math.PI) / 180;
+      const R = 6371;
+      const dLat = toRad(orderInfo.customer_lat - orderInfo.shop_lat);
+      const dLon = toRad(orderInfo.customer_long - orderInfo.shop_long);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(orderInfo.shop_lat)) * Math.cos(toRad(orderInfo.customer_lat)) *
+        Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    })();
+
+    orderInfo.delivery_option = distance <= 50 ? "assign_to_partner" : "ship_api";
+
+    // Generate invoice
+    try {
+      const invoicePath = await generateInvoice(orderInfo);
+      orderInfo.invoice_url = `${req.protocol}://${req.get("host")}${invoicePath}`;
+    } catch {
+      orderInfo.invoice_url = null;
+    }
+
+    res.json(orderInfo);
   });
+});
+
+  // router.get('/vendor-orders/:order_id', authenticate, (req, res) => {
+  //   const vendor_id = req.user.id;
+  //   const { order_id } = req.params;
+  
+  //   const sql = `
+  //     SELECT 
+  //       o.id AS order_id, 
+  //       o.order_number, 
+  //       o.status, 
+  //       o.order_date, 
+  //       c.id AS customer_id, 
+  //       c.full_name AS customer_name, 
+  //       c.phone AS customer_mobile, 
+  //       o.customer_latitude AS customer_lat,
+  //       o.customer_longitude AS customer_long,
+  //       s.id AS shop_id,
+  //       s.latitude AS shop_lat,
+  //       s.longitude AS shop_long,
+  //       oi.id AS item_id, 
+  //       oi.quantity, 
+  //       oi.price, 
+  //       p.id AS product_id, 
+  //       p.name AS product_name, 
+  //       p.images
+  //     FROM orders o
+  //     JOIN order_items oi ON o.id = oi.order_id
+  //     JOIN products p ON oi.product_id = p.id
+  //     JOIN users c ON o.customer_id = c.id
+  //     JOIN vendor_shops s ON oi.vendor_id = s.vendor_id
+  //     WHERE o.id = ? AND oi.vendor_id = ?
+  //   `;
+  
+  //   db.query(sql, [order_id, vendor_id], (err, results) => {
+  //     if (err) return res.status(500).json({ error: err.message });
+  //     if (results.length === 0) return res.status(404).json({ error: "Order not found" });
+  
+  //     const orderInfo = {
+  //       order_id: results[0].order_id,
+  //       order_number: results[0].order_number,
+  //       status: results[0].status,
+  //       order_date: results[0].order_date,
+  //       customer_lat: results[0].customer_lat,
+  //       customer_long: results[0].customer_long,
+  //       shop_lat: results[0].shop_lat,
+  //       shop_long: results[0].shop_long,
+  //       delivery_option: null, // 👈 default
+  //       customer: {
+  //         id: results[0].customer_id,
+  //         name: results[0].customer_name,
+  //         mobile: results[0].customer_mobile
+  //       },
+  //       items: results.map(r => ({
+  //         item_id: r.item_id,
+  //         product_id: r.product_id,
+  //         product_name: r.product_name,
+  //         quantity: r.quantity,
+  //         price: r.price,
+  //         images: (() => {
+  //           try {
+  //             return JSON.parse(r.images || '[]');
+  //           } catch (e) {
+  //             return [];
+  //           }
+  //         })()
+  //       }))
+  //     };
+  
+  //     // ✅ distance calc
+  //     const shopLat = parseFloat(results[0].shop_lat);
+  //     const shopLng = parseFloat(results[0].shop_long);
+  //     const custLat = parseFloat(results[0].customer_lat);
+  //     const custLng = parseFloat(results[0].customer_long);
+
+  //     function haversine(lat1, lon1, lat2, lon2) {
+  //       function toRad(x) {
+  //         return (x * Math.PI) / 180;
+  //       }
+      
+  //       const R = 6371; // Earth radius in km
+  //       const dLat = toRad(lat2 - lat1);
+  //       const dLon = toRad(lon2 - lon1);
+  //       const a =
+  //         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+  //         Math.cos(toRad(lat1)) *
+  //           Math.cos(toRad(lat2)) *
+  //           Math.sin(dLon / 2) *
+  //           Math.sin(dLon / 2);
+      
+  //       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  //       return R * c; // distance in km
+  //     }
+      
+  
+  //     const distance = haversine(shopLat, shopLng, custLat, custLng);
+  
+  //     if (distance <= 50) {
+  //       orderInfo.delivery_option = "assign_to_partner"; // vendor will click assign
+  //     } else {
+  //       orderInfo.delivery_option = "ship_api"; // auto-ship
+  //     }
+  
+  //     res.json(orderInfo);
+  //   });
+  // });
   
   router.post('/vendor/assign-delivery/:order_id', authenticate, (req, res) => {
     const vendor_id = req.user.id;
