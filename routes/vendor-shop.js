@@ -661,7 +661,7 @@ router.get('/vendor-orders/:order_id', authenticate, async (req, res) => {
         name: results[0].customer_name,
         mobile: results[0].customer_mobile
       },
-      vendor_name: req.user.full_name || "Vendor",
+      vendor_name: req.user.name || "Vendor",
       items: results.map(r => ({
         item_id: r.item_id,
         product_id: r.product_id,
@@ -2076,6 +2076,56 @@ router.put('/toggle-product-status/:id', authenticate, (req, res) => {
       message: `Product ${is_active == 1 ? 'enabled' : 'disabled'} successfully`,
       product_id,
       is_active
+    });
+  });
+});
+
+
+router.put('/vendor-order-update/:order_id', authenticate, (req, res) => {
+  const vendor_id = req.user.id;
+  const { order_id } = req.params;
+  const { awb_number, shipment_name, shipment_label } = req.body;
+
+  if (!awb_number && !shipment_name && !shipment_label) {
+    return res.status(400).json({ error: "At least one field is required to update" });
+  }
+
+  // Build dynamic update query
+  const updates = [];
+  const values = [];
+
+  if (awb_number) {
+    updates.push("awb_number = ?");
+    values.push(awb_number);
+  }
+  if (shipment_name) {
+    updates.push("shipment_name = ?");
+    values.push(shipment_name);
+  }
+  if (shipment_label) {
+    updates.push("shipment_label = ?");
+    values.push(shipment_label);
+  }
+
+  values.push(order_id, vendor_id);
+
+  const sql = `
+    UPDATE orders o
+    JOIN order_items oi ON o.id = oi.order_id
+    SET ${updates.join(", ")}
+    WHERE o.id = ? AND oi.vendor_id = ?
+  `;
+
+  db.query(sql, values, (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Order not found or not owned by vendor" });
+    }
+
+    res.json({
+      message: "Order updated successfully",
+      updated_fields: { awb_number, shipment_name, shipment_label }
     });
   });
 });
