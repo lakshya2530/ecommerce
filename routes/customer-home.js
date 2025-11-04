@@ -1759,7 +1759,10 @@ router.get('/customer/services', (req, res) => {
     });
   });
   
-  
+  function safeJsonParse(str, fallback = []) {
+    if (!str) return fallback;
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+  }
 router.get('/customer-orders/:order_id', authenticate, (req, res) => {
   const customer_id = req.user.id;
   const { order_id } = req.params;
