@@ -1925,7 +1925,7 @@ router.get('/customer/services', (req, res) => {
         return res.status(404).json({ error: "Order not found" });
       }
   
-      // Format product images
+      // ✅ Safely format and normalize item data
       const orderItems = results.map(item => {
         let images = [];
         try {
@@ -1936,19 +1936,20 @@ router.get('/customer/services', (req, res) => {
           product_id: item.product_id,
           product_name: item.product_name,
           product_description: item.product_description,
-          price: item.price,
-          quantity: item.quantity,
+          price: parseFloat(item.price) || 0,   // ✅ Ensure numeric
+          quantity: parseInt(item.quantity) || 1,
           category: item.category,
           images
         };
       });
   
-      // Calculate total amount
+      // ✅ Safe total calculation
       const totalAmount = orderItems.reduce(
-        (sum, item) => sum + item.price * item.quantity, 0
+        (sum, item) => sum + (item.price * item.quantity),
+        0
       );
   
-      // Build order object
+      // ✅ Build order object
       const orderDetail = {
         order_id: results[0].order_id,
         order_number: results[0].order_number,
@@ -1992,6 +1993,7 @@ router.get('/customer/services', (req, res) => {
       res.status(500).json({ error: "Server error" });
     }
   });
+  
   
 
   // GET /categories
