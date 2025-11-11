@@ -81,7 +81,7 @@ const generateInvoice = async (orderData) => {
       doc.pipe(stream);
 
       // ---- HEADER SECTION ----
-      const logoPath = path.join(__dirname, "../uploads/logo.png"); // ✅ make sure logo exists
+      const logoPath = path.join(__dirname, "../uploads/logo.jpg"); // ✅ make sure logo exists
       if (fs.existsSync(logoPath)) {
         doc.image(logoPath, 40, 30, { width: 80 });
       }
