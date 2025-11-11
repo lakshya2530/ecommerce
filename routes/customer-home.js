@@ -1856,7 +1856,7 @@ router.get('/customer/services', (req, res) => {
       JOIN order_items ot ON o.id = ot.order_id
       JOIN products p ON o.product_id = p.id
       JOIN users u ON o.vendor_id = u.id
-      LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
+      LEFT JOIN users dp ON o.assigned_to = dp.id
       WHERE o.customer_id = ?
       ORDER BY o.order_date DESC
     `;
