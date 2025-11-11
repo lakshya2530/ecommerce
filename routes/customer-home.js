@@ -654,6 +654,7 @@ router.get('/customer/home', async (req, res) => {
       });
     });
 
+    
     // ✅ Final Response
     return res.json({
       search_query: search || '',
