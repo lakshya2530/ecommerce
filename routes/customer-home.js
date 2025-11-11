@@ -1623,73 +1623,73 @@ router.get('/customer/services', (req, res) => {
   // });
   
 
-  // router.get('/customer-orders', authenticate, (req, res) => {
-  //   const customer_id = req.user.id;
-  //   const now = new Date();
-  //   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+   router.get('/customer-orders', authenticate, (req, res) => {
+   const customer_id = req.user.id;
+     const now = new Date();
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
   
-  //   const sql = `
-  //     SELECT 
-  //       o.order_number,
-  //       o.id AS order_id,
-  //       o.status AS order_status,
-  //       o.order_date,
-  //       o.product_id,
-  //       o.customer_id,
-  //       o.vendor_id,
-  //       o.assigned_to,
-  //       ot.price,
-  //       p.name AS product_name,
-  //       p.images,
-  //       p.category,
-  //       u.full_name AS vendor_name,
-  //       dp.full_name AS delivery_partner_name,
-  //       dp.phone AS delivery_partner_phone
-  //     FROM orders o
-  //     JOIN order_items ot ON o.id = ot.order_id
-  //     JOIN products p ON o.product_id = p.id
-  //     JOIN users u ON o.vendor_id = u.id
-  //     LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
-  //     WHERE o.customer_id = ?
-  //     ORDER BY o.order_date DESC
-  //   `;
+     const sql = `
+      SELECT 
+         o.order_number,
+        o.id AS order_id,
+         o.status AS order_status,
+        o.order_date,
+        o.product_id,
+         o.customer_id,
+        o.vendor_id,
+        o.assigned_to,
+        ot.price,
+        p.name AS product_name,
+        p.images,
+       p.category,
+        u.full_name AS vendor_name,
+        dp.full_name AS delivery_partner_name,
+       dp.phone AS delivery_partner_phone
+      FROM orders o
+      JOIN order_items ot ON o.id = ot.order_id
+      JOIN products p ON o.product_id = p.id
+     JOIN users u ON o.vendor_id = u.id
+       LEFT JOIN users dp ON o.cf = dp.id -- delivery partner
+      WHERE o.customer_id = ?
+       ORDER BY o.order_date DESC
+     `;
   
-  //   db.query(sql, [customer_id], (err, results) => {
-  //     if (err) return res.status(500).json({ error: err.message });
+     db.query(sql, [customer_id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
   
-  //     const upcoming = [];
-  //     const past = [];
+     const upcoming = [];
+      const past = [];
   
-  //     results.forEach(order => {
-  //       const deliveryDate = new Date(order.delivery_date || order.order_date);
-  //       const images = (() => {
-  //         try {
-  //           return JSON.parse(order.images || '[]').map(
-  //             img => `${baseUrl}/products/${img}`
-  //           );
-  //         } catch (e) {
-  //           return [];
-  //         }
-  //       })();
+      results.forEach(order => {
+        const deliveryDate = new Date(order.delivery_date || order.order_date);
+        const images = (() => {
+          try {
+            return JSON.parse(order.images || '[]').map(
+              img => `${baseUrl}/products/${img}`
+            );
+         } catch (e) {
+             return [];
+          }
+        })();
   
-  //       const formattedOrder = {
-  //         ...order,
-  //         images,
-  //         vendor_name: order.vendor_name,
-  //         delivery_partner_name: order.delivery_partner_name,
-  //         delivery_partner_phone: order.delivery_partner_phone
-  //       };
+       const formattedOrder = {
+          ...order,
+          images,
+           vendor_name: order.vendor_name,
+          delivery_partner_name: order.delivery_partner_name,
+          delivery_partner_phone: order.delivery_partner_phone
+        };
   
-  //       if (deliveryDate > now) {
-  //         upcoming.push(formattedOrder);
-  //       } else {
-  //         past.push(formattedOrder);
-  //       }
-  //     });
+        if (deliveryDate > now) {
+          upcoming.push(formattedOrder);
+        } else {
+          past.push(formattedOrder);
+        }
+       });
   
-  //     res.json({ upcoming_orders: upcoming, past_orders: past });
-  //   });
-  // });
+      res.json({ upcoming_orders: upcoming, past_orders: past });
+    });
+  });
 
   router.get('/customer-orders/:order_id', authenticate, async (req, res) => {
     const customer_id = req.user.id;
