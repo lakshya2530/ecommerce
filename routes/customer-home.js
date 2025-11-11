@@ -1897,8 +1897,7 @@ router.get('/customer/services', (req, res) => {
   });
   
   
-
-  router.get('/customer-orders/:order_id', authenticate, (req, res) => {
+  router.get('/customer-orders/:order_id', authenticate, async (req, res) => {
     const customer_id = req.user.id;
     const { order_id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
@@ -1906,8 +1905,9 @@ router.get('/customer/services', (req, res) => {
     const sql = `
       SELECT 
         o.order_number, o.id AS order_id, o.status AS order_status, 
+        o.awb_number, o.shipment_name, o.shipment_label,
         o.order_date, o.customer_id, o.vendor_id, o.assigned_to, 
-        oi.price, oi.quantity,
+        oi.price, oi.quantity, oi.product_id,
         p.name AS product_name, p.description AS product_description,
         p.images, p.category, 
         u.full_name AS vendor_name, u.phone AS vendor_mobile
@@ -1918,21 +1918,19 @@ router.get('/customer/services', (req, res) => {
       WHERE o.id = ? AND o.customer_id = ?
     `;
   
-    db.query(sql, [order_id, customer_id], (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (!results.length) return res.status(404).json({ error: "Order not found" });
+    try {
+      const [results] = await db.promise().query(sql, [order_id, customer_id]);
   
-      // format images
+      if (!results.length) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+  
+      // Format product images
       const orderItems = results.map(item => {
-        const images = (() => {
-          try {
-            return JSON.parse(item.images || '[]').map(
-              img => `${baseUrl}/products/${img}`
-            );
-          } catch {
-            return [];
-          }
-        })();
+        let images = [];
+        try {
+          images = JSON.parse(item.images || '[]').map(img => `${baseUrl}/products/${img}`);
+        } catch { }
   
         return {
           product_id: item.product_id,
@@ -1945,22 +1943,54 @@ router.get('/customer/services', (req, res) => {
         };
       });
   
-      // single order response
+      // Calculate total amount
+      const totalAmount = orderItems.reduce(
+        (sum, item) => sum + item.price * item.quantity, 0
+      );
+  
+      // Build order object
       const orderDetail = {
         order_id: results[0].order_id,
         order_number: results[0].order_number,
         status: results[0].order_status,
         order_date: results[0].order_date,
+        awb_number: results[0].awb_number,
+        shipment_name: results[0].shipment_name,
+        shipment_label: results[0].shipment_label,
         vendor: {
           vendor_id: results[0].vendor_id,
           vendor_name: results[0].vendor_name,
           vendor_mobile: results[0].vendor_mobile
         },
+        items: orderItems,
+        total_amount: totalAmount
+      };
+  
+      // ✅ Step 1: Prepare invoice data
+      const invoiceData = {
+        order_number: orderDetail.order_number,
+        order_date: orderDetail.order_date,
+        customer_name: req.user.name || 'Customer',
+        vendor_name: orderDetail.vendor.vendor_name,
+        total: totalAmount,
         items: orderItems
       };
   
+      // ✅ Step 2: Generate invoice PDF
+      try {
+        const invoicePath = await generateInvoice(invoiceData);
+        orderDetail.invoice_url = `${req.protocol}://${req.get('host')}${invoicePath}`;
+      } catch (err) {
+        console.error("Invoice generation failed:", err);
+        orderDetail.invoice_url = null;
+      }
+  
       res.json(orderDetail);
-    });
+  
+    } catch (err) {
+      console.error("Customer Order Fetch Error:", err);
+      res.status(500).json({ error: "Server error" });
+    }
   });
   
 
