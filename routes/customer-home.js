@@ -1289,7 +1289,6 @@ router.get('/customer/services', (req, res) => {
   });
 });
 
-
   router.get('/customer/product/:id', (req, res) => {
     const { id } = req.params;
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
