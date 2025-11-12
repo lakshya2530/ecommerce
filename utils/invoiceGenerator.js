@@ -61,8 +61,6 @@
 // module.exports = { generateInvoice };
 
 
-
-
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
@@ -76,119 +74,131 @@ const generateInvoice = async (orderData) => {
       const invoiceFileName = `invoice_${orderData.order_number || Date.now()}.pdf`;
       const filePath = path.join(invoiceDir, invoiceFileName);
 
-      const doc = new PDFDocument({ margin: 40 });
+      const doc = new PDFDocument({ margin: 40, size: "A4" });
       const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
 
-      // ---- HEADER SECTION ----
-      const logoPath = path.join(__dirname, "../uploads/logo.jpg"); // ✅ make sure logo exists
+      // ===== HEADER SECTION =====
+      const logoPath = path.join(__dirname, "../uploads/logo.jpg");
       if (fs.existsSync(logoPath)) {
         doc.image(logoPath, 40, 30, { width: 80 });
       }
 
       doc
         .fontSize(22)
-        .fillColor("#333333")
-        .text("INVOICE", 0, 50, { align: "right" });
+        .fillColor("#222")
+        .text("INVOICE", 0, 40, { align: "right" });
 
       doc
         .fontSize(10)
-        .fillColor("#555")
+        .fillColor("#444")
         .text(`Invoice #: ${orderData.order_number}`, { align: "right" })
         .text(`Date: ${new Date(orderData.order_date).toLocaleDateString()}`, { align: "right" })
         .moveDown(2);
 
-      // ---- BILLING INFO ----
+      // ===== BILLING SECTION =====
+      const topY = doc.y;
       doc
         .fontSize(12)
         .fillColor("#000")
-        .text("BILL TO:", 40)
+        .text("Bill To:", 40)
         .fontSize(10)
+        .fillColor("#333")
         .text(orderData.customer_name)
-        .text(orderData.customer_address || "No address provided")
-        .moveDown(1);
+        .text(orderData.customer_address || "No address provided");
 
       doc
         .fontSize(12)
-        .text("VENDOR:", 300)
+        .fillColor("#000")
+        .text("Vendor:", 320, topY)
         .fontSize(10)
-        .text(orderData.vendor_name, 300)
-        .text(orderData.vendor_address || "No address provided")
-        .moveDown(2);
+        .fillColor("#333")
+        .text(orderData.vendor_name, 320)
+        .text(orderData.vendor_address || "No address provided");
 
-      // ---- TABLE HEADER ----
+      doc.moveDown(2);
+
+      // ===== TABLE HEADER =====
+      const tableTop = doc.y;
       doc
-        .fontSize(12)
-        .fillColor("#ffffff")
-        .rect(40, doc.y, 520, 25)
-        .fill("#4A90E2")
+        .fontSize(11)
         .fillColor("#fff")
-        .text("S.No", 45, doc.y + 7)
-        .text("Product", 100, doc.y + 7)
-        .text("Qty", 330, doc.y + 7)
-        .text("Price", 380, doc.y + 7)
-        .text("Total", 460, doc.y + 7);
+        .rect(40, tableTop, 520, 25)
+        .fill("#1976D2");
 
-      doc.moveDown(1.5).fillColor("#000");
+      const headerY = tableTop + 8;
+      doc
+        .fillColor("#fff")
+        .text("S.No", 50, headerY)
+        .text("Product", 100, headerY)
+        .text("Qty", 330, headerY)
+        .text("Price", 390, headerY)
+        .text("Total", 470, headerY);
 
-      // ---- TABLE ROWS ----
+      doc.moveDown(2).fillColor("#000");
+
+      // ===== TABLE ROWS =====
       let totalAmount = 0;
+      const rowSpacing = 20;
       orderData.items.forEach((item, i) => {
         const y = doc.y;
-        const itemTotal = item.quantity * item.price;
+
+        // Prevent overflow (if too many items)
+        if (y > 700) {
+          doc.addPage();
+          doc.y = 100;
+        }
+
+        const itemTotal = parseFloat(item.price) * parseInt(item.quantity);
         totalAmount += itemTotal;
 
         doc
           .fontSize(10)
           .fillColor("#000")
-          .text(i + 1, 45, y)
+          .text(i + 1, 50, y)
           .text(item.product_name, 100, y)
           .text(item.quantity.toString(), 340, y)
-          .text(`₹${item.price.toFixed(2)}`, 390, y)
+          .text(`₹${Number(item.price).toFixed(2)}`, 395, y)
           .text(`₹${itemTotal.toFixed(2)}`, 470, y);
-        doc.moveDown(0.7);
+
+        doc.moveDown(0.6);
       });
 
-      doc.moveDown(1);
-
-      // ---- TOTALS SECTION ----
-      doc
-        .fontSize(12)
-        .fillColor("#333")
-        .text("Subtotal:", 380, doc.y + 10)
-        .text(`₹${totalAmount.toFixed(2)}`, 470, doc.y + 10, { align: "right" });
-
-      const gst = totalAmount * 0.18; // example GST 18%
+      // ===== SUBTOTALS =====
+      doc.moveDown(2);
+      const totalsY = doc.y;
+      const gst = totalAmount * 0.18;
       const grandTotal = totalAmount + gst;
 
       doc
-        .text("GST (18%):", 380, doc.y + 20)
-        .text(`₹${gst.toFixed(2)}`, 470, doc.y + 20, { align: "right" })
+        .fontSize(11)
+        .fillColor("#000")
+        .text("Subtotal:", 380, totalsY)
+        .text(`₹${totalAmount.toFixed(2)}`, 470, totalsY, { align: "right" })
+        .text("GST (18%):", 380, totalsY + 15)
+        .text(`₹${gst.toFixed(2)}`, 470, totalsY + 15, { align: "right" })
         .font("Helvetica-Bold")
-        .text("Grand Total:", 380, doc.y + 30)
-        .text(`₹${grandTotal.toFixed(2)}`, 470, doc.y + 30, { align: "right" });
+        .text("Grand Total:", 380, totalsY + 30)
+        .text(`₹${grandTotal.toFixed(2)}`, 470, totalsY + 30, { align: "right" });
 
-      doc.moveDown(2);
-
-      // ---- FOOTER ----
+      // ===== FOOTER =====
       doc
-        .moveDown(2)
+        .moveDown(4)
         .font("Helvetica")
         .fontSize(10)
-        .fillColor("#666")
-        .text(
-          "Thank you for your purchase! Please contact us for any queries related to your order.",
-          { align: "center" }
-        )
-        .moveDown(0.5)
+        .fillColor("#555")
+        .text("Thank you for shopping with us!", { align: "center" })
+        .moveDown(0.3)
         .text("This is a system-generated invoice and does not require a signature.", {
           align: "center",
         });
 
+      // Finish
       doc.end();
 
       stream.on("finish", () => resolve(`/uploads/invoices/${invoiceFileName}`));
       stream.on("error", (err) => reject(err));
+
     } catch (err) {
       reject(err);
     }
@@ -196,4 +206,5 @@ const generateInvoice = async (orderData) => {
 };
 
 module.exports = { generateInvoice };
+
 
