@@ -540,7 +540,7 @@ router.get('/customer/home', async (req, res) => {
 
     // 🛒 Products
     const productSQL = `
-      SELECT p.*, vs.latitude, vs.longitude 
+      SELECT p.*, vs.latitude, vs.longitude
       FROM products p
       LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
       WHERE p.status = 'active'
@@ -556,8 +556,29 @@ router.get('/customer/home', async (req, res) => {
           )`
           : ''
       }
-      ORDER BY p.id DESC LIMIT 10
+      GROUP BY p.id
+      ORDER BY p.id DESC
+      LIMIT 10
     `;
+    // const productSQL = `
+    //   SELECT p.*, vs.latitude, vs.longitude 
+    //   FROM products p
+    //   LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
+    //   WHERE p.status = 'active'
+    //   ${
+    //     search
+    //       ? `AND (
+    //         p.name LIKE ? OR 
+    //         p.description LIKE ? OR 
+    //         p.category LIKE ? OR
+    //         p.model_name LIKE ? OR
+    //         p.color LIKE ? OR
+    //         p.specifications LIKE ?
+    //       )`
+    //       : ''
+    //   }
+    //   ORDER BY p.id DESC LIMIT 10
+    // `;
     const productParams = search ? Array(6).fill(`%${search}%`) : [];
 
     const products = await new Promise((resolve, reject) => {
