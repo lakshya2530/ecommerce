@@ -465,7 +465,7 @@ const { generateInvoice } = require('../utils/invoiceGenerator'); // ✅ Add thi
 // });
 
 
-router.get('/customer/home', async (req, res) => {
+router.get('/customer/oldhome', async (req, res) => {
   try {
     const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
     const search = req.query.search?.trim() || null;
@@ -694,7 +694,267 @@ router.get('/customer/home', async (req, res) => {
   }
 });
 
+router.get('/customer/home', async (req, res) => {
+  try {
+    const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+    const search = req.query.search?.trim() || null;
+    const userLat = parseFloat(req.query.latitude);
+    const userLng = parseFloat(req.query.longitude);
 
+    // Utility: Safe JSON parser
+    const safeJsonParse = (str, fallback = []) => {
+      if (!str) return fallback;
+      try {
+        return JSON.parse(str);
+      } catch {
+        return fallback;
+      }
+    };
+
+    // Utility: Distance calculator
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      const R = 6371; // km
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2;
+
+      return +(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2);
+    };
+
+    // 📦 Product Categories
+    const categories = await new Promise((resolve, reject) => {
+      db.query(
+        `SELECT id, name, image 
+         FROM categories 
+         WHERE parent_id IS NULL 
+         ORDER BY id DESC`,
+        (err, results) => {
+          if (err) return reject(err);
+
+          resolve(
+            results.map((c) => ({
+              ...c,
+              image: c.image ? `${baseUrl}/categories/${c.image}` : '',
+            }))
+          );
+        }
+      );
+    });
+
+    // 🛠️ Service Categories
+    const serviceCategories = await new Promise((resolve, reject) => {
+      db.query(
+        `SELECT id, name 
+         FROM service_categories 
+         ORDER BY id DESC`,
+        (err, results) => {
+          if (err) return reject(err);
+          resolve(results);
+        }
+      );
+    });
+
+    // 🏷️ Vendor Banners
+    const vendorBanners = await new Promise((resolve, reject) => {
+      db.query(
+        `SELECT image, image_link 
+         FROM vendor_ads 
+         ORDER BY id DESC 
+         LIMIT 10`,
+        (err, results) => {
+          if (err) return reject(err);
+
+          resolve(
+            results.map((ad) => ({
+              image: ad.image ? `${baseUrl}/vendor_ads/${ad.image}` : '',
+              image_link: ad.image_link,
+            }))
+          );
+        }
+      );
+    });
+
+    // 🛒 Products (Fixed duplicate issue)
+    const productSQL = `
+      SELECT p.*, vs.latitude, vs.longitude
+      FROM products p
+      LEFT JOIN (
+        SELECT 
+          vendor_id,
+          MAX(latitude) AS latitude,
+          MAX(longitude) AS longitude
+        FROM vendor_shops
+        GROUP BY vendor_id
+      ) vs ON p.vendor_id = vs.vendor_id
+      WHERE p.status = 'active'
+      ${
+        search
+          ? `AND (
+              p.name LIKE ? OR 
+              p.description LIKE ? OR 
+              p.category LIKE ? OR
+              p.model_name LIKE ? OR
+              p.color LIKE ? OR
+              p.specifications LIKE ?
+          )`
+          : ''
+      }
+      ORDER BY p.id DESC
+      LIMIT 10
+    `;
+
+    const productParams = search ? Array(6).fill(`%${search}%`) : [];
+
+    const products = await new Promise((resolve, reject) => {
+      db.query(productSQL, productParams, (err, results) => {
+        if (err) return reject(err);
+
+        resolve(
+          results.map((p) => ({
+            ...p,
+            images: safeJsonParse(p.images, []).map(
+              (img) => `${baseUrl}/products/${img}`
+            ),
+            specifications: safeJsonParse(p.specifications, []),
+            distance_in_km:
+              userLat && userLng && p.latitude && p.longitude
+                ? calculateDistance(userLat, userLng, p.latitude, p.longitude)
+                : null,
+          }))
+        );
+      });
+    });
+
+    // 🧰 Services (Fixed duplicate issue)
+    const serviceSQL = `
+      SELECT s.*, vs.latitude, vs.longitude
+      FROM services s
+      LEFT JOIN (
+        SELECT 
+          vendor_id,
+          MAX(latitude) AS latitude,
+          MAX(longitude) AS longitude
+        FROM vendor_shops
+        GROUP BY vendor_id
+      ) vs ON s.vendor_id = vs.vendor_id
+      WHERE 1=1
+      ${
+        search
+          ? `AND (
+              s.service_name LIKE ? OR 
+              s.service_description LIKE ? OR 
+              (JSON_VALID(s.features) AND JSON_SEARCH(s.features, 'one', ?)) IS NOT NULL OR
+              (JSON_VALID(s.brands) AND JSON_SEARCH(s.brands, 'one', ?)) IS NOT NULL OR
+              (JSON_VALID(s.labels) AND JSON_SEARCH(s.labels, 'one', ?)) IS NOT NULL
+          )`
+          : ''
+      }
+      ORDER BY s.id DESC
+      LIMIT 10
+    `;
+
+    const serviceParams = search ? Array(5).fill(`%${search}%`) : [];
+
+    const services = await new Promise((resolve, reject) => {
+      db.query(serviceSQL, serviceParams, (err, results) => {
+        if (err) return reject(err);
+
+        resolve(
+          results.map((s) => ({
+            ...s,
+            gallery: safeJsonParse(s.gallery, []).map(
+              (img) => `${baseUrl}/services/${img}`
+            ),
+            brands: safeJsonParse(s.brands, []),
+            features: safeJsonParse(s.features, []),
+            exclusions: safeJsonParse(s.exclusions, []),
+            previous_work: safeJsonParse(s.previous_work, []),
+            distance_in_km:
+              userLat && userLng && s.latitude && s.longitude
+                ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+                : null,
+          }))
+        );
+      });
+    });
+
+    // 🏬 Shops
+    const shopSQL = `
+      SELECT 
+        id, vendor_id, shop_name, shop_image, address,
+        latitude, longitude, gst_number, pan_number,
+        owner_name, shop_document, additional_document
+      FROM vendor_shops
+      WHERE 1=1
+      ${
+        search
+          ? `AND (
+              shop_name LIKE ? OR 
+              address LIKE ? OR 
+              owner_name LIKE ?
+          )`
+          : ''
+      }
+      ORDER BY id DESC
+      LIMIT 10
+    `;
+
+    const shopParams = search ? Array(3).fill(`%${search}%`) : [];
+
+    const shops = await new Promise((resolve, reject) => {
+      db.query(shopSQL, shopParams, (err, results) => {
+        if (err) return reject(err);
+
+        resolve(
+          results.map((s) => ({
+            ...s,
+            shop_image: s.shop_image
+              ? `${baseUrl}/shops/${s.shop_image}`
+              : '',
+            shop_document: s.shop_document
+              ? `${baseUrl}/vendor_shops/${s.shop_document}`
+              : '',
+            additional_document: s.additional_document
+              ? `${baseUrl}/vendor_shops/${s.additional_document}`
+              : '',
+            distance_in_km:
+              userLat && userLng && s.latitude && s.longitude
+                ? calculateDistance(userLat, userLng, s.latitude, s.longitude)
+                : null,
+          }))
+        );
+      });
+    });
+
+    // ✅ Final Response
+    return res.json({
+      search_query: search || '',
+      latitude: userLat || null,
+      longitude: userLng || null,
+      categories,
+      service_categories: serviceCategories,
+      vendor_banners: vendorBanners,
+      latest_products: products,
+      latest_services: services,
+      shops,
+    });
+  } catch (error) {
+    console.error(
+      '❌ Home Page Error:',
+      error.sqlMessage || error.message || error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+});
 
 // 📏 Helper Function: Calculate Distance using Haversine Formula
 function calculateDistance(lat1, lon1, lat2, lon2) {
