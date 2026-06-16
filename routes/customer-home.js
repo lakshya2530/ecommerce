@@ -1408,6 +1408,219 @@ router.get('/customer/products', (req, res) => {
   let sql = `
     SELECT p.*, vs.latitude AS shop_lat, vs.longitude AS shop_lng
     FROM products p
+    LEFT JOIN (
+      SELECT 
+        vendor_id,
+        MAX(latitude) AS latitude,
+        MAX(longitude) AS longitude
+      FROM vendor_shops
+      GROUP BY vendor_id
+    ) vs ON p.vendor_id = vs.vendor_id
+    WHERE p.status = "active"
+  `;
+
+  const values = [];
+
+  if (category) {
+    sql += ` AND p.category = ?`;
+    values.push(category);
+  }
+
+  if (sub_category) {
+    sql += ` AND p.sub_category = ?`;
+    values.push(sub_category);
+  }
+
+  sql += ` ORDER BY p.id DESC`;
+
+  db.query(sql, values, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+
+      const R = 6371;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return (R * c).toFixed(2);
+    };
+
+    const customerLat = parseFloat(latitude);
+    const customerLng = parseFloat(longitude);
+
+    const formatted = results.map((p) => {
+      let images = [];
+      let specs = [];
+
+      try {
+        images = JSON.parse(p.images || "[]").map(
+          (img) => `${baseUrl}/products/${img}`
+        );
+      } catch {}
+
+      try {
+        specs = JSON.parse(p.specifications || "[]");
+      } catch {}
+
+      const distance =
+        customerLat && customerLng
+          ? calculateDistance(
+              customerLat,
+              customerLng,
+              p.shop_lat,
+              p.shop_lng
+            )
+          : null;
+
+      return {
+        ...p,
+        images,
+        specifications: specs,
+        distance_km: distance,
+      };
+    });
+
+    res.json(formatted);
+  });
+});
+
+
+
+router.get('/customer/services', (req, res) => {
+  const { subcategory_id, latitude, longitude } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  let serviceSql = `
+    SELECT 
+      s.id AS service_id,
+      s.service_name,
+      s.service_description,
+      s.price,
+      s.approx_time,
+      s.vendor_id,
+      s.service_type,
+      s.location,
+      s.meet_link,
+      s.is_after_pay,
+      sc.name AS subcategory_name,
+      sc.image AS subcategory_image,
+      vs.latitude AS shop_lat,
+      vs.longitude AS shop_lng
+    FROM services s
+    LEFT JOIN service_subcategories sc ON s.sub_category_id = sc.id
+    LEFT JOIN (
+      SELECT 
+        vendor_id,
+        MAX(latitude) AS latitude,
+        MAX(longitude) AS longitude
+      FROM vendor_shops
+      GROUP BY vendor_id
+    ) vs ON s.vendor_id = vs.vendor_id
+  `;
+
+  const params = [];
+
+  if (subcategory_id) {
+    serviceSql += ` WHERE s.sub_category_id = ?`;
+    params.push(subcategory_id);
+  }
+
+  serviceSql += ` ORDER BY s.id DESC`;
+
+  db.query(serviceSql, params, (err, serviceResults) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const serviceIds = serviceResults.map((s) => s.service_id);
+
+    if (!serviceIds.length) {
+      return res.json([]);
+    }
+
+    const slotSql = `
+      SELECT id, service_id, slot_date, slot_time
+      FROM service_slots
+      WHERE service_id IN (?)
+      ORDER BY slot_date ASC, slot_time ASC
+    `;
+
+    db.query(slotSql, [serviceIds], (err2, slotResults) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+
+      const slotsByService = {};
+
+      slotResults.forEach((slot) => {
+        if (!slotsByService[slot.service_id]) {
+          slotsByService[slot.service_id] = [];
+        }
+
+        slotsByService[slot.service_id].push({
+          slot_id: slot.id,
+          slot_date: slot.slot_date,
+          slot_time: slot.slot_time,
+        });
+      });
+
+      const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+
+        const R = 6371;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return (R * c).toFixed(2);
+      };
+
+      const customerLat = parseFloat(latitude);
+      const customerLng = parseFloat(longitude);
+
+      const formatted = serviceResults.map((s) => {
+        const distance =
+          customerLat && customerLng
+            ? calculateDistance(
+                customerLat,
+                customerLng,
+                s.shop_lat,
+                s.shop_lng
+              )
+            : null;
+
+        return {
+          ...s,
+          subcategory_image: s.subcategory_image
+            ? `${baseUrl}/${s.subcategory_image}`
+            : "",
+          slots: slotsByService[s.service_id] || [],
+          distance_km: distance,
+        };
+      });
+
+      res.json(formatted);
+    });
+  });
+});
+
+router.get('/customer/oldproducts', (req, res) => {
+  const { category, sub_category, latitude, longitude } = req.query;
+  const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
+
+  let sql = `
+    SELECT p.*, vs.latitude AS shop_lat, vs.longitude AS shop_lng
+    FROM products p
     LEFT JOIN vendor_shops vs ON p.vendor_id = vs.vendor_id
     WHERE p.status = "active"
   `;
@@ -1473,7 +1686,7 @@ router.get('/customer/products', (req, res) => {
 });
 
 
-router.get('/customer/services', (req, res) => {
+router.get('/customer/oldservices', (req, res) => {
   const { subcategory_id, latitude, longitude } = req.query;
   const baseUrl = `${req.protocol}://${req.get('host')}/uploads`;
 
