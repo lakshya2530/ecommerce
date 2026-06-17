@@ -32,7 +32,7 @@ router.post(
   ]),
   (req, res) => {
     const vendor_id = req.user.id;
-    const { shop_name, address, gst_number, pan_number, owner_name } = req.body;
+    const { shop_name, address, gst_number, pan_number, owner_name,city,state,pincode,latitude,longitude,address_confirmed } = req.body;
     const files = req.files;
 
     const data = {
@@ -42,6 +42,7 @@ router.post(
       gst_number,
       pan_number,
       owner_name,
+      city,state,pincode,latitude,longitude,address_confirmed,
       shop_document: files?.shop_document?.[0]?.filename || '',
       additional_document: files?.additional_document?.[0]?.filename || ''
 
