@@ -549,7 +549,7 @@ router.post("/settings", (req, res) => {
 
 router.get('/category-requests', (req, res) => {
   const sql = `
-    SELECT cr.*, u.name AS vendor_name
+    SELECT cr.*, u.full_name AS vendor_name
     FROM category_requests cr
     LEFT JOIN users u ON cr.vendor_id = u.id
     ORDER BY cr.id DESC
