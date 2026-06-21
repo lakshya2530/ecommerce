@@ -408,4 +408,69 @@ router.get('/product-list', authenticate, (req, res) => {
     });
   });
   
+
+  router.post('/request-category', (req, res) => {
+    const {
+      vendor_id,
+      type,
+      category_name,
+      sub_category_name
+    } = req.body;
+  
+    if (!vendor_id || !type || !category_name || !sub_category_name) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required'
+      });
+    }
+  
+    const sql = `
+      INSERT INTO category_requests
+      (vendor_id, type, category_name, sub_category_name)
+      VALUES (?, ?, ?, ?)
+    `;
+  
+    db.query(
+      sql,
+      [vendor_id, type, category_name, sub_category_name],
+      (err, result) => {
+        if (err) {
+          return res.status(500).json({
+            success: false,
+            error: err.message
+          });
+        }
+  
+        res.json({
+          success: true,
+          message: 'Category request submitted successfully'
+        });
+      }
+    );
+  });
+
+  router.get('/category-requests/:vendor_id', (req, res) => {
+    const { vendor_id } = req.params;
+  
+    const sql = `
+      SELECT *
+      FROM category_requests
+      WHERE vendor_id = ?
+      ORDER BY id DESC
+    `;
+  
+    db.query(sql, [vendor_id], (err, results) => {
+      if (err) {
+        return res.status(500).json({
+          success: false,
+          error: err.message
+        });
+      }
+  
+      res.json({
+        success: true,
+        data: results
+      });
+    });
+  });
   module.exports = router;

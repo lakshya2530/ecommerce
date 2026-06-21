@@ -547,6 +547,159 @@ router.post("/settings", (req, res) => {
   });
 });
 
+router.get('/category-requests', (req, res) => {
+  const sql = `
+    SELECT cr.*, u.name AS vendor_name
+    FROM category_requests cr
+    LEFT JOIN users u ON cr.vendor_id = u.id
+    ORDER BY cr.id DESC
+  `;
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      return res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+
+    res.json({
+      success: true,
+      data: results
+    });
+  });
+});
+
+router.post('/approve-category/:id', (req, res) => {
+  const requestId = req.params.id;
+
+  db.query(
+    `SELECT * FROM category_requests WHERE id = ?`,
+    [requestId],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({
+          success: false,
+          error: err.message
+        });
+      }
+
+      if (!result.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Request not found'
+        });
+      }
+
+      const request = result[0];
+
+      // PRODUCT CATEGORY
+      if (request.type === 'product') {
+        db.query(
+          `INSERT INTO categories (name, parent_id) VALUES (?, NULL)`,
+          [request.category_name],
+          (err, categoryResult) => {
+            if (err) {
+              return res.status(500).json({
+                success: false,
+                error: err.message
+              });
+            }
+
+            const categoryId = categoryResult.insertId;
+
+            db.query(
+              `INSERT INTO categories (name, parent_id) VALUES (?, ?)`,
+              [request.sub_category_name, categoryId],
+              (err2) => {
+                if (err2) {
+                  return res.status(500).json({
+                    success: false,
+                    error: err2.message
+                  });
+                }
+
+                db.query(
+                  `UPDATE category_requests SET status='approved' WHERE id=?`,
+                  [requestId]
+                );
+
+                res.json({
+                  success: true,
+                  message: 'Product category approved successfully'
+                });
+              }
+            );
+          }
+        );
+      }
+
+      // SERVICE CATEGORY
+      else if (request.type === 'service') {
+        db.query(
+          `INSERT INTO service_categories (name) VALUES (?)`,
+          [request.category_name],
+          (err, categoryResult) => {
+            if (err) {
+              return res.status(500).json({
+                success: false,
+                error: err.message
+              });
+            }
+
+            const categoryId = categoryResult.insertId;
+
+            db.query(
+              `INSERT INTO service_subcategories (name, category_id) VALUES (?, ?)`,
+              [request.sub_category_name, categoryId],
+              (err2) => {
+                if (err2) {
+                  return res.status(500).json({
+                    success: false,
+                    error: err2.message
+                  });
+                }
+
+                db.query(
+                  `UPDATE category_requests SET status='approved' WHERE id=?`,
+                  [requestId]
+                );
+
+                res.json({
+                  success: true,
+                  message: 'Service category approved successfully'
+                });
+              }
+            );
+          }
+        );
+      }
+    }
+  );
+});
+
+
+router.post('/reject-category/:id', (req, res) => {
+  const requestId = req.params.id;
+
+  db.query(
+    `UPDATE category_requests SET status = 'rejected' WHERE id = ?`,
+    [requestId],
+    (err) => {
+      if (err) {
+        return res.status(500).json({
+          success: false,
+          error: err.message
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Request rejected successfully'
+      });
+    }
+  );
+});
 
 module.exports = router;
 
